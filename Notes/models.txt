@@ -22,7 +22,7 @@ Please review and improve my PyTorch code. Specifically:
 continue generate the code, start from method "" ()
 
 Also consider:
-- in terms of predictions (i see predictions = torch.argmax(logits, dim=1) in code) , maybe we need to write a new function, compute_prediction, because predictions result depends on the each problem. 
+- help me integrate functions seed_everything, compute_predictions into appropriate class, not put it alone like this
 - Using Ray Train for training (Adding a toggle variable to indicate whether we want to use Ray Train.)
 
 - inference method

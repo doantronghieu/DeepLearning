@@ -398,7 +398,7 @@ class ModelTrainer:
 
             train_losses.append(loss.item())
             
-            predictions = torch.argmax(logits, dim=1)
+            predictions = self.compute_predictions(logits)
             self.metrics_tracker.update(predictions, y_batch)
 
             for callback in self.callbacks:
@@ -430,7 +430,7 @@ class ModelTrainer:
                 total_loss += loss.item() * x.size(0)
                 total_samples += x.size(0)
                 
-                predictions = torch.argmax(logits, dim=1)
+                predictions = self.compute_predictions(logits)
                 self.metrics_tracker.update(predictions, y)
             except RuntimeError as e:
                 if "out of memory" in str(e):
@@ -560,6 +560,10 @@ class ModelTrainer:
             self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
         self.history = checkpoint['history']
         logger.info(f"Loaded checkpoint from {checkpoint_path}")
+
+    def compute_predictions(self, logits: torch.Tensor) -> torch.Tensor:
+        # This method can be overridden in subclasses for different prediction logic
+        return torch.argmax(logits, dim=1)
 
 class ModelAnalyzer:
     def __init__(self, model: BaseModel, train_dataset: BaseDataset, val_dataset: BaseDataset, test_dataset: BaseDataset):
@@ -905,3 +909,17 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+# Additional utility functions
+
+def compute_predictions(logits: torch.Tensor) -> torch.Tensor:
+    """
+    Compute predictions from logits. This function can be customized based on the specific problem.
+    
+    Args:
+        logits (torch.Tensor): The raw output from the model.
+    
+    Returns:
+        torch.Tensor: The computed predictions.
+    """
+    return torch.argmax(logits, dim=1)
