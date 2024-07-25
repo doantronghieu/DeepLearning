@@ -9,27 +9,16 @@ Methods: train(epochs, learning_rate, batch_size=32, seed), save(), load(), infe
 - evaluate(mode=["eval", "test"])
 - plot_metric(): loss, accuracy
 
-Can you recommend any improvements for my PyTorch code, particularly for the base class for a model? I'm looking for suggestions on enhancing the training loop, training techniques, and adding more methods. Additionally, could you help me check for any logical conflicts or potential issues within the class and its methods?
-
-Please review and improve my PyTorch code. Specifically:
-- Suggest optimizations for performance and readability.
-- Identify and resolve any logical conflicts or potential issues within class methods and between different classes.
-- Highlight best practices I may have overlooked.
-- Propose any architectural improvements that could enhance the code's structure.
-- Provide the full revised and improved source code.
-- If applicable, suggest any PyTorch-specific features or functions that could be leveraged to improve the code.
-
 continue generate the code, start from method "" ()
 
 Also consider:
-- help me integrate functions seed_everything, compute_predictions into appropriate class, not put it alone like this
+
+
 - Using Ray Train for training (Adding a toggle variable to indicate whether we want to use Ray Train.)
 
 - inference method
 
-- add optimizer to config
 - in ModelTrainer, why i do not see the input of callback, just see it init with empty list
-- if you can, add type hint for all variables in init method of all classes
 
 - QuantizationManager
   - input: model (nn.Module)

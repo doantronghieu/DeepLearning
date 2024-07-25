@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torchmetrics import MetricCollection
 from pathlib import Path
-from typing import Tuple, List, Dict, Union, Callable, Optional, Any, TypeVar, Generic
+from typing import Tuple, List, Dict, Union, Callable, Optional, Any, TypeVar, Type
 from loguru import logger
 from tqdm import tqdm
 import torch.cuda.amp as amp
@@ -40,6 +40,7 @@ from abc import ABC, abstractmethod
 T = TypeVar('T')
 
 # Use Hydra for configuration management
+# Use Hydra for configuration management
 @dataclass
 class ModelConfig:
     learning_rate: float = 0.001
@@ -65,6 +66,7 @@ class ModelConfig:
     lr_scheduler: str = 'cosine_warm_restarts'
     warmup_steps: int = 1000
     max_lr: float = 0.01
+    weight_decay: float = 0.01
     loss_fn: nn.Module = field(default_factory=lambda: nn.CrossEntropyLoss())
 
 cs = ConfigStore.instance()
@@ -106,7 +108,6 @@ class Registry:
 callback_registry = Registry()
 metric_registry = Registry()
 
-# Abstract base class for models
 class BaseModel(nn.Module, ABC):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -150,6 +151,19 @@ class BaseModel(nn.Module, ABC):
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             raise ModelError(f"Failed to load model: {e}")
+
+    @staticmethod
+    def compute_predictions(logits: torch.Tensor) -> torch.Tensor:
+        """
+        Compute predictions from logits.
+        
+        Args:
+            logits (torch.Tensor): The raw output from the model.
+        
+        Returns:
+            torch.Tensor: The computed predictions.
+        """
+        return torch.softmax(logits, dim=1)
 
 # Implement Factory pattern for model creation
 class ModelFactory:
@@ -195,8 +209,6 @@ class ResNet(BaseModel):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
-# Abstract base class for callbacks
-@callback_registry.register("base_callback")
 class Callback(ABC):
     @abstractmethod
     def on_train_begin(self, logs: Optional[Dict] = None) -> None:
@@ -222,7 +234,6 @@ class Callback(ABC):
     def on_batch_end(self, batch: int, logs: Optional[Dict] = None) -> None:
         pass
 
-# Implement EarlyStopping as a Callback
 @callback_registry.register("early_stopping")
 class EarlyStopping(Callback):
     def __init__(self, patience: int = 10, min_delta: float = 0):
@@ -311,18 +322,25 @@ class ModelMetricsTracker:
 class ModelExperimentTracker:
     def __init__(self, config: ModelConfig):
         self.config = config
-        self.run = None
+        self.run: Optional[Any] = None
         if self.config.use_wandb:
             self.run = wandb.init(project=self.config.wandb_project, entity=self.config.wandb_entity)
             wandb.config.update(OmegaConf.to_container(self.config))
+        if self.config.use_tensorboard:
+            self.writer = SummaryWriter(log_dir=self.config.tensorboard_log_dir)
 
     def log(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
         if self.config.use_wandb and self.run:
             self.run.log(metrics, step=step)
+        if self.config.use_tensorboard:
+            for key, value in metrics.items():
+                self.writer.add_scalar(key, value, step)
 
     def finish(self) -> None:
         if self.config.use_wandb and self.run:
             self.run.finish()
+        if self.config.use_tensorboard:
+            self.writer.close()
 
 class ModelTrainer:
     def __init__(self, model: BaseModel, optimizer: torch.optim.Optimizer, 
@@ -343,9 +361,6 @@ class ModelTrainer:
             checkpoint_dir=config.checkpoint_dir,
             max_checkpoints=config.max_checkpoints
         )
-        self.writer = None
-        if config.use_tensorboard:
-            self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
 
     def _initialize_history(self) -> Dict[str, List[float]]:
         return {
@@ -360,6 +375,13 @@ class ModelTrainer:
     def _initialize_lr_scheduler(self):
         if self.config.lr_scheduler == 'cosine_warm_restarts':
             return CosineAnnealingWarmRestarts(self.optimizer, T_0=10, T_mult=2)
+        elif self.config.lr_scheduler == 'one_cycle':
+            return torch.optim.lr_scheduler.OneCycleLR(
+                self.optimizer,
+                max_lr=self.config.max_lr,
+                steps_per_epoch=len(self.train_dataset) // self.config.batch_size,
+                epochs=self.config.epochs
+            )
         else:
             return None
     
@@ -398,7 +420,7 @@ class ModelTrainer:
 
             train_losses.append(loss.item())
             
-            predictions = self.compute_predictions(logits)
+            predictions = self.model.compute_predictions(logits)
             self.metrics_tracker.update(predictions, y_batch)
 
             for callback in self.callbacks:
@@ -430,7 +452,7 @@ class ModelTrainer:
                 total_loss += loss.item() * x.size(0)
                 total_samples += x.size(0)
                 
-                predictions = self.compute_predictions(logits)
+                predictions = self.model.compute_predictions(logits)
                 self.metrics_tracker.update(predictions, y)
             except RuntimeError as e:
                 if "out of memory" in str(e):
@@ -496,9 +518,6 @@ class ModelTrainer:
                 for metric, value in val_metrics.items():
                     self.history[f'val_{metric}'].append(value)
 
-                if self.writer:
-                    self._log_to_tensorboard(epoch)
-
                 if (epoch + 1) % self.config.checkpoint_frequency == 0:
                     self._save_checkpoint(epoch)
 
@@ -530,21 +549,10 @@ class ModelTrainer:
             raise TrainingError(f"Training failed: {e}")
 
         finally:
-            if self.writer:
-                self.writer.close()
-
             self.experiment_tracker.finish()
 
             for callback in self.callbacks:
                 callback.on_train_end()
-
-    def _log_to_tensorboard(self, epoch: int) -> None:
-        for key, value in self.history.items():
-            if value:
-                self.writer.add_scalar(key, value[-1], epoch)
-        
-        if self.lr_scheduler:
-            self.writer.add_scalar('learning_rate', self.lr_scheduler.get_last_lr()[0], epoch)
 
     def add_callback(self, callback: Callback) -> None:
         self.callbacks.append(callback)
@@ -560,11 +568,6 @@ class ModelTrainer:
             self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
         self.history = checkpoint['history']
         logger.info(f"Loaded checkpoint from {checkpoint_path}")
-
-    def compute_predictions(self, logits: torch.Tensor) -> torch.Tensor:
-        # This method can be overridden in subclasses for different prediction logic
-        return torch.argmax(logits, dim=1)
-
 class ModelAnalyzer:
     def __init__(self, model: BaseModel, train_dataset: BaseDataset, val_dataset: BaseDataset, test_dataset: BaseDataset):
         self.model = model
@@ -636,7 +639,7 @@ class ModelAnalyzer:
         return attributions.squeeze().cpu().detach().numpy(), approximation_error
 
 class HyperparameterTuner:
-    def __init__(self, model_class, dataset, config: ModelConfig):
+    def __init__(self, model_class: Type[BaseModel], dataset: BaseDataset, config: ModelConfig):
         self.model_class = model_class
         self.dataset = dataset
         self.base_config = config
@@ -688,7 +691,7 @@ class HyperparameterTuner:
 
 class DistributedTrainer:
     @staticmethod
-    def setup(rank, world_size):
+    def setup(rank: int, world_size: int):
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '12355'
 
@@ -699,7 +702,7 @@ class DistributedTrainer:
         dist.destroy_process_group()
 
     @staticmethod
-    def train(rank, world_size, model, dataset, config, num_epochs):
+    def train(rank: int, world_size: int, model: BaseModel, dataset: BaseDataset, config: ModelConfig, num_epochs: int):
         try:
             DistributedTrainer.setup(rank, world_size)
 
@@ -760,7 +763,7 @@ class DistributedTrainer:
             DistributedTrainer.cleanup()
 
     @staticmethod
-    def run_distributed(model_fn, dataset, config, num_epochs):
+    def run_distributed(model_fn: Callable[[ModelConfig], BaseModel], dataset: BaseDataset, config: ModelConfig, num_epochs: int):
         world_size = torch.cuda.device_count()
         if world_size > 1:
             mp.spawn(
@@ -829,7 +832,7 @@ class ModelServer:
     def __init__(self, model: BaseModel, config: ModelConfig):
         self.model = model
         self.config = config
-        self.triton_client = None
+        self.triton_client: Optional[triton_http.InferenceServerClient] = None
 
     def _prepare_model_repository(self, repository_path: str):
         os.makedirs(repository_path, exist_ok=True)
@@ -900,26 +903,3 @@ def model_server_context(model: BaseModel, config: ModelConfig, repository_path:
         yield server
     finally:
         loop.run_until_complete(server.stop_server(process))
-
-def seed_everything(seed: int):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-# Additional utility functions
-
-def compute_predictions(logits: torch.Tensor) -> torch.Tensor:
-    """
-    Compute predictions from logits. This function can be customized based on the specific problem.
-    
-    Args:
-        logits (torch.Tensor): The raw output from the model.
-    
-    Returns:
-        torch.Tensor: The computed predictions.
-    """
-    return torch.argmax(logits, dim=1)
