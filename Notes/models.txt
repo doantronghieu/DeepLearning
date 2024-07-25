@@ -13,10 +13,8 @@ continue generate the code, start from method "" ()
 
 Also consider:
 
-
 - Using Ray Train for training (Adding a toggle variable to indicate whether we want to use Ray Train.)
 
-- inference method
 
 - in ModelTrainer, why i do not see the input of callback, just see it init with empty list
 

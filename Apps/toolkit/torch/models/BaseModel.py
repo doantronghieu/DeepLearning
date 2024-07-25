@@ -40,7 +40,6 @@ from abc import ABC, abstractmethod
 T = TypeVar('T')
 
 # Use Hydra for configuration management
-# Use Hydra for configuration management
 @dataclass
 class ModelConfig:
     learning_rate: float = 0.001
@@ -154,16 +153,12 @@ class BaseModel(nn.Module, ABC):
 
     @staticmethod
     def compute_predictions(logits: torch.Tensor) -> torch.Tensor:
-        """
-        Compute predictions from logits.
-        
-        Args:
-            logits (torch.Tensor): The raw output from the model.
-        
-        Returns:
-            torch.Tensor: The computed predictions.
-        """
         return torch.softmax(logits, dim=1)
+
+    @torch.no_grad()
+    def inference(self, x: torch.Tensor) -> torch.Tensor:
+        self.eval()
+        return self.forward(x)
 
 # Implement Factory pattern for model creation
 class ModelFactory:
@@ -383,6 +378,7 @@ class ModelTrainer:
                 epochs=self.config.epochs
             )
         else:
+            logger.warning(f"Unknown lr_scheduler: {self.config.lr_scheduler}. No scheduler will be used.")
             return None
     
     @torch.jit.script
@@ -397,7 +393,8 @@ class ModelTrainer:
         self.metrics_tracker.reset()
 
         for i, (x_batch, y_batch) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}")):
-            x_batch, y_batch = x_batch.to(self.config.device, non_blocking=True), y_batch.to(self.config.device, non_blocking=True)
+            x_batch = x_batch.to(self.config.device, non_blocking=True)
+            y_batch = y_batch.to(self.config.device, non_blocking=True)
             
             for callback in self.callbacks:
                 callback.on_batch_begin(i)
@@ -446,7 +443,8 @@ class ModelTrainer:
 
         for x, y in tqdm(data_loader, desc=f"Evaluating {prefix}"):
             try:
-                x, y = x.to(self.config.device, non_blocking=True), y.to(self.config.device, non_blocking=True)
+                x = x.to(self.config.device, non_blocking=True)
+                y = y.to(self.config.device, non_blocking=True)
                 logits = self.model(x)
                 loss = self.model.compute_loss(logits, y)
                 total_loss += loss.item() * x.size(0)
@@ -568,6 +566,7 @@ class ModelTrainer:
             self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
         self.history = checkpoint['history']
         logger.info(f"Loaded checkpoint from {checkpoint_path}")
+
 class ModelAnalyzer:
     def __init__(self, model: BaseModel, train_dataset: BaseDataset, val_dataset: BaseDataset, test_dataset: BaseDataset):
         self.model = model
