@@ -22,6 +22,7 @@ Please review and improve my PyTorch code. Specifically:
 continue generate the code, start from method "" ()
 
 Also consider:
+- in terms of predictions (i see predictions = torch.argmax(logits, dim=1) in code) , maybe we need to write a new function, compute_prediction, because predictions result depends on the each problem. 
 - Using Ray Train for training (Adding a toggle variable to indicate whether we want to use Ray Train.)
 
 - inference method
@@ -29,3 +30,6 @@ Also consider:
 - add optimizer to config
 - in ModelTrainer, why i do not see the input of callback, just see it init with empty list
 - if you can, add type hint for all variables in init method of all classes
+
+- QuantizationManager
+  - input: model (nn.Module)

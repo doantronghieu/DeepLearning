@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,9 +13,7 @@ import torch.cuda.amp as amp
 import wandb
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 import torch.nn.utils.prune as prune
-import torch.nn.functional as F
 import torch.multiprocessing as mp
-import ray
 from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
@@ -33,19 +32,19 @@ from torch.cuda.amp import autocast, GradScaler
 import tritonclient.http as triton_http
 import asyncio
 from contextlib import contextmanager
-import hydra
+from hydra.core.config_store import ConfigStore
 from hydra import compose, initialize
 from hydra.utils import instantiate
 from abc import ABC, abstractmethod
 
 T = TypeVar('T')
 
-# Use dataclass for configuration objects
+# Use Hydra for configuration management
 @dataclass
 class ModelConfig:
-    learning_rate: float
-    batch_size: int
-    seed: int
+    learning_rate: float = 0.001
+    batch_size: int = 32
+    seed: int = 42
     clip_grad_norm: Optional[float] = None
     use_amp: bool = False
     gradient_accumulation_steps: int = 1
@@ -68,18 +67,136 @@ class ModelConfig:
     max_lr: float = 0.01
     loss_fn: nn.Module = field(default_factory=lambda: nn.CrossEntropyLoss())
 
-    def update(self, **kwargs) -> None:
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            else:
-                raise ValueError(f"Invalid configuration key: {key}")
+cs = ConfigStore.instance()
+cs.store(name="model_config", node=ModelConfig)
 
-# Custom exception for model-related errors
+# Custom exceptions
 class ModelError(Exception):
     pass
 
+class DataError(Exception):
+    pass
+
+class TrainingError(Exception):
+    pass
+
+class BaseDataset(Dataset, ABC):
+    @abstractmethod
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        pass
+
+    @abstractmethod
+    def __len__(self) -> int:
+        pass
+
+# Implement Registry pattern for callbacks and metrics
+class Registry:
+    def __init__(self):
+        self._items = {}
+
+    def register(self, name: str):
+        def decorator(cls):
+            self._items[name] = cls
+            return cls
+        return decorator
+
+    def get(self, name: str):
+        return self._items.get(name)
+
+callback_registry = Registry()
+metric_registry = Registry()
+
+# Abstract base class for models
+class BaseModel(nn.Module, ABC):
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.config = config
+        self._set_random_seeds()
+
+    def _set_random_seeds(self) -> None:
+        torch.manual_seed(self.config.seed)
+        torch.cuda.manual_seed_all(self.config.seed)
+        np.random.seed(self.config.seed)
+        random.seed(self.config.seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        pass
+
+    def compute_loss(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return self.config.loss_fn(logits, y)
+
+    def save_model(self, path: Union[str, Path]) -> None:
+        try:
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save({
+                'model_state_dict': self.state_dict(),
+                'config': OmegaConf.to_container(self.config)
+            }, path)
+            logger.info(f"Model saved to {path}")
+        except Exception as e:
+            logger.error(f"Error saving model: {e}")
+            raise ModelError(f"Failed to save model: {e}")
+
+    def load_model(self, path: Union[str, Path]) -> None:
+        try:
+            checkpoint = torch.load(path, map_location=self.config.device)
+            self.load_state_dict(checkpoint['model_state_dict'])
+            self.config = OmegaConf.create(checkpoint['config'])
+            logger.info(f"Model loaded from {path}")
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            raise ModelError(f"Failed to load model: {e}")
+
+# Implement Factory pattern for model creation
+class ModelFactory:
+    @staticmethod
+    def create_model(model_type: str, config: ModelConfig) -> BaseModel:
+        if model_type == "simple_cnn":
+            return SimpleCNN(config)
+        elif model_type == "resnet":
+            return ResNet(config)
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+
+# Example model implementations
+class SimpleCNN(BaseModel):
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(128 * 56 * 56, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, config.output_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+class ResNet(BaseModel):
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
+        self.model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+        self.model.fc = nn.Linear(self.model.fc.in_features, config.output_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
 # Abstract base class for callbacks
+@callback_registry.register("base_callback")
 class Callback(ABC):
     @abstractmethod
     def on_train_begin(self, logs: Optional[Dict] = None) -> None:
@@ -106,6 +223,7 @@ class Callback(ABC):
         pass
 
 # Implement EarlyStopping as a Callback
+@callback_registry.register("early_stopping")
 class EarlyStopping(Callback):
     def __init__(self, patience: int = 10, min_delta: float = 0):
         self.patience = patience
@@ -169,56 +287,13 @@ class CheckpointManager:
             return torch.load(latest_checkpoint)
         return None
 
-# Abstract base class for models
-class BaseModel(nn.Module, ABC):
-    def __init__(self, config: ModelConfig):
-        super().__init__()
-        self.config = config
-        self._set_random_seeds()
-
-    def _set_random_seeds(self) -> None:
-        torch.manual_seed(self.config.seed)
-        torch.cuda.manual_seed_all(self.config.seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-    @abstractmethod
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        pass
-
-    def compute_loss(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return self.config.loss_fn(logits, y)
-
-    def save_model(self, path: Union[str, Path]) -> None:
-        try:
-            path = Path(path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({
-                'model_state_dict': self.state_dict(),
-                'config': OmegaConf.to_container(self.config)
-            }, path)
-            logger.info(f"Model saved to {path}")
-        except Exception as e:
-            logger.error(f"Error saving model: {e}")
-            raise ModelError(f"Failed to save model: {e}")
-
-    def load_model(self, path: Union[str, Path]) -> None:
-        try:
-            checkpoint = torch.load(path, map_location=self.config.device)
-            self.load_state_dict(checkpoint['model_state_dict'])
-            self.config = OmegaConf.create(checkpoint['config'])
-            logger.info(f"Model loaded from {path}")
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            raise ModelError(f"Failed to load model: {e}")
-
 class ModelMetricsTracker:
     def __init__(self, config: ModelConfig):
         self.config = config
         self.metric_collection = self._initialize_metrics()
 
     def _initialize_metrics(self) -> MetricCollection:
-        metrics = {metric: globals()[metric.capitalize()]().to(self.config.device) for metric in self.config.metrics}
+        metrics = {metric: metric_registry.get(metric)().to(self.config.device) for metric in self.config.metrics}
         return MetricCollection(metrics)
 
     def update(self, predictions: torch.Tensor, targets: torch.Tensor) -> None:
@@ -251,7 +326,7 @@ class ModelExperimentTracker:
 
 class ModelTrainer:
     def __init__(self, model: BaseModel, optimizer: torch.optim.Optimizer, 
-                 train_dataset: Dataset, val_dataset: Dataset, test_dataset: Dataset, config: ModelConfig):
+                 train_dataset: BaseDataset, val_dataset: BaseDataset, test_dataset: BaseDataset, config: ModelConfig):
         self.model = model.to(config.device)
         self.optimizer = optimizer
         self.train_dataset = train_dataset
@@ -288,17 +363,25 @@ class ModelTrainer:
         else:
             return None
     
+    @torch.jit.script
+    def _train_step(self, x_batch: torch.Tensor, y_batch: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        logits = self.model(x_batch)
+        loss = self.model.compute_loss(logits, y_batch)
+        return loss, logits
+
     def _train_epoch(self, epoch: int, total_epochs: int, train_loader: DataLoader) -> None:
         self.model.train()
         train_losses = []
         self.metrics_tracker.reset()
 
         for i, (x_batch, y_batch) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}")):
-            x_batch, y_batch = self._move_to_device((x_batch, y_batch))
+            x_batch, y_batch = x_batch.to(self.config.device, non_blocking=True), y_batch.to(self.config.device, non_blocking=True)
+            
+            for callback in self.callbacks:
+                callback.on_batch_begin(i)
             
             with autocast(enabled=self.config.use_amp):
-                logits = self.model(x_batch)
-                loss = self.model.compute_loss(logits, y_batch)
+                loss, logits = self._train_step(x_batch, y_batch)
 
             self.scaler.scale(loss).backward()
 
@@ -318,6 +401,9 @@ class ModelTrainer:
             predictions = torch.argmax(logits, dim=1)
             self.metrics_tracker.update(predictions, y_batch)
 
+            for callback in self.callbacks:
+                callback.on_batch_end(i, logs={'loss': loss.item()})
+
         train_metric_values = self.metrics_tracker.compute()
         self.history['train_loss'].append(sum(train_losses) / len(train_losses))
         for metric, value in train_metric_values.items():
@@ -329,9 +415,6 @@ class ModelTrainer:
             'learning_rate': self.optimizer.param_groups[0]['lr']
         }, step=epoch)
 
-    def _move_to_device(self, tensors: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
-        return tuple(t.to(self.config.device) for t in tensors)
-
     @torch.no_grad()
     def evaluate(self, data_loader: DataLoader, prefix: str = 'val') -> Tuple[float, Dict[str, float]]:
         self.model.eval()
@@ -341,7 +424,7 @@ class ModelTrainer:
 
         for x, y in tqdm(data_loader, desc=f"Evaluating {prefix}"):
             try:
-                x, y = self._move_to_device((x, y))
+                x, y = x.to(self.config.device, non_blocking=True), y.to(self.config.device, non_blocking=True)
                 logits = self.model(x)
                 loss = self.model.compute_loss(logits, y)
                 total_loss += loss.item() * x.size(0)
@@ -401,53 +484,59 @@ class ModelTrainer:
         for callback in self.callbacks:
             callback.on_train_begin()
 
-        for epoch in range(epochs):
-            for callback in self.callbacks:
-                callback.on_epoch_begin(epoch)
+        try:
+            for epoch in range(epochs):
+                for callback in self.callbacks:
+                    callback.on_epoch_begin(epoch)
 
-            self._train_epoch(epoch, epochs, train_loader)
-            val_loss, val_metrics = self.evaluate(val_loader, prefix='val')
-            
-            self.history['val_loss'].append(val_loss)
-            for metric, value in val_metrics.items():
-                self.history[f'val_{metric}'].append(value)
+                self._train_epoch(epoch, epochs, train_loader)
+                val_loss, val_metrics = self.evaluate(val_loader, prefix='val')
+                
+                self.history['val_loss'].append(val_loss)
+                for metric, value in val_metrics.items():
+                    self.history[f'val_{metric}'].append(value)
 
-            if self.writer:
-                self._log_to_tensorboard(epoch)
+                if self.writer:
+                    self._log_to_tensorboard(epoch)
 
-            if (epoch + 1) % self.config.checkpoint_frequency == 0:
-                self._save_checkpoint(epoch)
+                if (epoch + 1) % self.config.checkpoint_frequency == 0:
+                    self._save_checkpoint(epoch)
+
+                self.experiment_tracker.log({
+                    'val_loss': val_loss,
+                    **{f'val_{k}': v for k, v in val_metrics.items()}
+                }, step=epoch)
+
+                for callback in self.callbacks:
+                    callback.on_epoch_end(epoch, logs={'val_loss': val_loss})
+
+                if any(isinstance(callback, EarlyStopping) and callback.early_stop for callback in self.callbacks):
+                    logger.info("Early stopping triggered")
+                    break
+
+            # Final evaluation on test set
+            test_loss, test_metrics = self.evaluate(test_loader, prefix='test')
+            self.history['test_loss'].append(test_loss)
+            for metric, value in test_metrics.items():
+                self.history[f'test_{metric}'].append(value)
 
             self.experiment_tracker.log({
-                'val_loss': val_loss,
-                **{f'val_{k}': v for k, v in val_metrics.items()}
-            }, step=epoch)
+                'test_loss': test_loss,
+                **{f'test_{k}': v for k, v in test_metrics.items()}
+            })
+
+        except Exception as e:
+            logger.error(f"Error during training: {e}")
+            raise TrainingError(f"Training failed: {e}")
+
+        finally:
+            if self.writer:
+                self.writer.close()
+
+            self.experiment_tracker.finish()
 
             for callback in self.callbacks:
-                callback.on_epoch_end(epoch, logs={'val_loss': val_loss})
-
-            if any(isinstance(callback, EarlyStopping) and callback.early_stop for callback in self.callbacks):
-                logger.info("Early stopping triggered")
-                break
-
-        # Final evaluation on test set
-        test_loss, test_metrics = self.evaluate(test_loader, prefix='test')
-        self.history['test_loss'].append(test_loss)
-        for metric, value in test_metrics.items():
-            self.history[f'test_{metric}'].append(value)
-
-        self.experiment_tracker.log({
-            'test_loss': test_loss,
-            **{f'test_{k}': v for k, v in test_metrics.items()}
-        })
-
-        if self.writer:
-            self.writer.close()
-
-        self.experiment_tracker.finish()
-
-        for callback in self.callbacks:
-            callback.on_train_end()
+                callback.on_train_end()
 
     def _log_to_tensorboard(self, epoch: int) -> None:
         for key, value in self.history.items():
@@ -472,14 +561,14 @@ class ModelTrainer:
         self.history = checkpoint['history']
         logger.info(f"Loaded checkpoint from {checkpoint_path}")
 
-
 class ModelAnalyzer:
-    def __init__(self, model: BaseModel, train_dataset: Dataset, val_dataset: Dataset, test_dataset: Dataset):
+    def __init__(self, model: BaseModel, train_dataset: BaseDataset, val_dataset: BaseDataset, test_dataset: BaseDataset):
         self.model = model
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.test_dataset = test_dataset
 
+    @torch.no_grad()
     def get_layer_output(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
         try:
             for name, layer in self.model.named_modules():
@@ -489,55 +578,6 @@ class ModelAnalyzer:
             raise ValueError(f"Layer {layer_name} not found in the model.")
         except Exception as e:
             raise ModelError(f"Error getting layer output: {e}")
-
-    def visualize_feature_maps(self, x: torch.Tensor, layer_name: str, path: Union[str, Path]) -> None:
-        try:
-            feature_maps = self.get_layer_output(x, layer_name)
-            feature_maps = feature_maps.squeeze().cpu().detach().numpy()
-            
-            fig, axs = plt.subplots(8, 8, figsize=(20, 20))
-            fig.suptitle(f'Feature Maps of {layer_name}', fontsize=16)
-            
-            for i in range(min(feature_maps.shape[0], 64)):
-                ax = axs[i//8, i%8]
-                ax.imshow(feature_maps[i], cmap='viridis')
-                ax.axis('off')
-            
-            path = Path(path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            plt.savefig(path)
-            plt.close()
-            logger.info(f"Feature maps visualization saved to {path}")
-        except Exception as e:
-            raise ModelError(f"Error visualizing feature maps: {e}")
-
-    def compute_class_activation_maps(self, x: torch.Tensor, class_idx: int) -> np.ndarray:
-        try:
-            from pytorch_grad_cam import GradCAM
-            from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-        except ImportError:
-            raise ImportError("pytorch_grad_cam is not installed. Please install it to use this feature.")
-
-        try:
-            self.model.eval()
-            x = x.to(self.model.config.device)
-
-            target_layer = None
-            for module in reversed(list(self.model.modules())):
-                if isinstance(module, (nn.Conv2d, nn.Linear)):
-                    target_layer = module
-                    break
-            
-            if target_layer is None:
-                raise ValueError("Could not find an appropriate layer for CAM.")
-
-            cam = GradCAM(model=self.model, target_layers=[target_layer], use_cuda=torch.cuda.is_available())
-            targets = [ClassifierOutputTarget(class_idx)]
-
-            grayscale_cam = cam(input_tensor=x, targets=targets)
-            return grayscale_cam[0]
-        except Exception as e:
-            raise ModelError(f"Error computing class activation maps: {e}")
 
     def profile_model(self, num_steps: int = 100):
         train_loader = DataLoader(
@@ -590,27 +630,6 @@ class ModelAnalyzer:
         attributions, approximation_error = ig.attribute(input_tensor, baseline, target=target_class, return_convergence_delta=True)
         
         return attributions.squeeze().cpu().detach().numpy(), approximation_error
-
-    def visualize_attribution(self, attribution: np.ndarray, original_image: np.ndarray, path: Union[str, Path]):
-        try:
-            from captum.attr import visualization as viz
-        except ImportError:
-            raise ImportError("captum is not installed. Please install it to use this feature.")
-
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        _ = viz.visualize_image_attr(
-            attribution,
-            original_image,
-            method="heat_map",
-            sign="all",
-            show_colorbar=True,
-            title="Integrated Gradients Attribution"
-        )
-        plt.savefig(path)
-        plt.close()
-        logger.info(f"Attribution visualization saved to {path}")
 
 class HyperparameterTuner:
     def __init__(self, model_class, dataset, config: ModelConfig):
@@ -877,3 +896,12 @@ def model_server_context(model: BaseModel, config: ModelConfig, repository_path:
         yield server
     finally:
         loop.run_until_complete(server.stop_server(process))
+
+def seed_everything(seed: int):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
