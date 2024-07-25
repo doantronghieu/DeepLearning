@@ -1,0 +1,49 @@
+torch
+torchinfo
+skorch
+torchdata
+torchmetrics
+torchvision
+torchtext
+torchaudio
+torchserve
+pytorch-lightning
+fastai
+transformers
+
+# Data
+albumentations # Image
+
+# Training
+ray
+ray[tune]
+
+# Optimization
+optuna
+
+# Tracking
+wandb
+mlflow
+catalyst
+
+# Explain
+captum
+grad-cam
+
+# Configs
+hydra-core
+
+fastapi
+loguru
+numpy
+opencv-python
+pandas
+pillow
+matplotlib
+scikit-learn
+tensorboard
+tqdm
+dataclasses
+
+# Deploy
+tritonclient
