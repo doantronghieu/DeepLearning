@@ -16,9 +16,11 @@ from torch.ao.quantization import (
 from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 import torch.quantization._numeric_suite as ns
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e, prepare_qat_pt2e
-from torch.ao.quantization.quantizer import Quantizer
+
+from torch.ao.quantization.quantizer import Quantizer, QuantizationAnnotation, QuantizationSpec
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from torch._export import capture_pre_autograd_graph
+from torch.fx.passes.utils.matcher_with_name_node_map_utils import SubgraphMatcherWithNameNodeMap
 
 class QuantizationManager:
     def __init__(self, model: nn.Module) -> None:
@@ -28,7 +30,13 @@ class QuantizationManager:
         self.prepare_custom_config = {}
         self.convert_custom_config = {}
         self.use_pt2e = False
-        self.backend_config = get_native_backend_config()  # Default backend config
+        self.backend_config = get_native_backend_config()
+        self.quantizer = None
+
+    def set_quantizer(self, quantizer: Quantizer) -> None:
+        """Set a custom Quantizer for PyTorch 2 Export Quantization."""
+        self.quantizer = quantizer
+        self.logger.info(f"Custom Quantizer set: {type(quantizer).__name__}")
 
     def _setup_logger(
         self
@@ -64,7 +72,7 @@ class QuantizationManager:
             self.use_pt2e = use_pt2e
             if use_pt2e:
                 if quantizer is None:
-                    quantizer = XNNPACKQuantizer()
+                    quantizer = self.quantizer or XNNPACKQuantizer()
                     if per_channel:
                         quantizer.set_global(get_symmetric_quantization_config())
                     else:
@@ -79,6 +87,7 @@ class QuantizationManager:
                 else:
                     self.quantized_model = self._dynamic_quantize_pt2e(exported_model, quantizer)
             else:
+                # Existing quantization logic
                 qconfig_mapping = get_default_qconfig_mapping(backend)
                 if static:
                     self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
@@ -225,6 +234,67 @@ class QuantizationManager:
         Ps = torch.norm(x)
         Pn = torch.norm(x - y)
         return 20 * torch.log10(Ps / Pn).item()
+
+    def match_pattern(self, pattern_fn: Callable, model: Optional[nn.Module] = None) -> List[Dict[str, nn.Module]]:
+        """
+        Match a pattern in the model using SubgraphMatcherWithNameNodeMap.
+        
+        Args:
+            pattern_fn (Callable): Function defining the pattern to match.
+            model (Optional[nn.Module]): Model to search for the pattern. If None, uses self.float_model.
+        
+        Returns:
+            List[Dict[str, nn.Module]]: List of matched subgraphs.
+        """
+        if model is None:
+            model = self.float_model
+        
+        matcher = SubgraphMatcherWithNameNodeMap(pattern_fn)
+        matches = matcher.match(model)
+        
+        return [match.name_node_map for match in matches]
+
+    def annotate_model(self, annotations: Dict[str, QuantizationAnnotation]) -> None:
+        """
+        Annotate the model with QuantizationAnnotations.
+        
+        Args:
+            annotations (Dict[str, QuantizationAnnotation]): Dictionary mapping node names to QuantizationAnnotations.
+        """
+        for name, module in self.float_model.named_modules():
+            if name in annotations:
+                module.meta["quantization_annotation"] = annotations[name]
+        
+        self.logger.info(f"Model annotated with {len(annotations)} annotations.")
+
+    def create_quantization_spec(
+        self,
+        dtype: torch.dtype,
+        quant_min: int,
+        quant_max: int,
+        qscheme: torch.qscheme,
+        observer_cls: Optional[Callable] = None
+    ) -> QuantizationSpec:
+        """
+        Create a QuantizationSpec object.
+        
+        Args:
+            dtype (torch.dtype): Quantization data type.
+            quant_min (int): Minimum quantization value.
+            quant_max (int): Maximum quantization value.
+            qscheme (torch.qscheme): Quantization scheme.
+            observer_cls (Optional[Callable]): Observer class to use.
+        
+        Returns:
+            QuantizationSpec: Created QuantizationSpec object.
+        """
+        return QuantizationSpec(
+            dtype=dtype,
+            quant_min=quant_min,
+            quant_max=quant_max,
+            qscheme=qscheme,
+            observer_or_fake_quant_ctr=observer_cls
+        )
 
     def benchmark(
         self,
