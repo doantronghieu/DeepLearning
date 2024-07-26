@@ -9,11 +9,12 @@ class TorchScriptManager:
         self.compiled_modules = {}
         self.use_mixed_compilation = False
         self.compilation_method = "auto"  # Can be "auto", "trace", or "script"
-        self.enable_cpp_code_generation = False  # Feature flag for C++ code generation
-        self.enable_sanity_check = False  # Feature flag for sanity check
-        self.enable_detailed_performance_analysis = False  # Feature flag for detailed performance analysis
-        self.enable_freezing = False  # Feature flag for model freezing
-
+        self.enable_cpp_code_generation = False 
+        self.enable_sanity_check = False
+        self.enable_detailed_performance_analysis = False
+        self.enable_freezing = False
+        self.disable_jit = False
+        
     def compile_module(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
         """
         Compile a PyTorch module using TorchScript.
@@ -25,6 +26,10 @@ class TorchScriptManager:
         Returns:
             torch.jit.ScriptModule: The compiled TorchScript module.
         """
+        if self.disable_jit:
+            print("JIT compilation disabled. Returning original module.")
+            return module
+          
         try:
             if self.compilation_method == "auto":
                 compiled_module = self._compile_auto(module, example_inputs)
@@ -32,6 +37,8 @@ class TorchScriptManager:
                 compiled_module = torch.jit.trace(module, example_inputs)
             elif self.compilation_method == "script":
                 compiled_module = torch.jit.script(module)
+            elif self.compilation_method == "trace_module":
+                compiled_module = self.trace_module(module, {"forward": example_inputs})
             else:
                 raise ValueError(f"Invalid compilation method: {self.compilation_method}")
             
@@ -46,6 +53,7 @@ class TorchScriptManager:
             return compiled_module
         except Exception as e:
             print(f"Compilation failed: {str(e)}")
+            self.print_graph(module)  # Print graph for debugging
             raise
 
     def _compile_auto(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
@@ -55,7 +63,7 @@ class TorchScriptManager:
         except Exception as e:
             print(f"Scripting failed, falling back to tracing. Error: {str(e)}")
             return torch.jit.trace(module, example_inputs)
-    
+
     def sanity_check(self, original_module: torch.nn.Module, compiled_module: torch.jit.ScriptModule, example_inputs: Any):
         """
         Perform a sanity check to ensure the compiled module produces the same output as the original module.
@@ -69,11 +77,11 @@ class TorchScriptManager:
             original_output = original_module(example_inputs)
             compiled_output = compiled_module(example_inputs)
 
-        original_top5 = F.softmax(original_output, dim=1).topk(5).indices
-        compiled_top5 = F.softmax(compiled_output, dim=1).topk(5).indices
+        original_top5 = F.softmax(original_output, dim=1).topk(5)
+        compiled_top5 = F.softmax(compiled_output, dim=1).topk(5)
 
-        if torch.equal(original_top5, compiled_top5):
-            print("Sanity check passed: Original and compiled models produce the same top 5 results.")
+        if torch.allclose(original_top5.values, compiled_top5.values, atol=1e-3) and torch.equal(original_top5.indices, compiled_top5.indices):
+            print("Sanity check passed: Original and compiled models produce similar top 5 results.")
         else:
             print("Warning: Sanity check failed. Original and compiled models produce different top 5 results.")
             print(f"Original model top 5 results:\n  {original_top5}")
@@ -93,7 +101,7 @@ class TorchScriptManager:
         if not self.enable_freezing:
             print("Warning: Freezing is disabled. Enable it by setting enable_freezing to True.")
             return module
-        return torch.jit.freeze(module, preserve_methods)
+        return torch.jit.freeze(module, reserve_methods=preserve_methods)
     
     def optimize_module(self, module: torch.jit.ScriptModule) -> torch.jit.ScriptModule:
         """
@@ -143,13 +151,7 @@ class TorchScriptManager:
         return torch.jit.load(path)
 
     def set_compilation_method(self, method: str):
-        """
-        Set the compilation method to use.
-        
-        Args:
-            method (str): The compilation method. Can be "auto", "trace", or "script".
-        """
-        if method not in ["auto", "trace", "script"]:
+        if method not in ["auto", "trace", "script", "trace_module"]:
             raise ValueError(f"Invalid compilation method: {method}")
         self.compilation_method = method
 
@@ -269,10 +271,8 @@ class TorchScriptManager:
         """Helper method to run performance analysis on a module"""
         module_metrics = {}
         
-        # Warm-up run
-        module(*inputs)
+        module(*inputs)  # Warm-up run
         
-        # Measure execution time
         start_time = time.time()
         num_runs = 100
         for _ in range(num_runs):
@@ -282,14 +282,12 @@ class TorchScriptManager:
         module_metrics["average_execution_time"] = (end_time - start_time) / num_runs
         module_metrics["output_size"] = sum(o.numel() for o in output) if isinstance(output, tuple) else output.numel()
         
-        # Memory usage (requires pytorch 1.6+)
         if hasattr(torch, 'cuda') and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
             output = module(*inputs)
             module_metrics["peak_gpu_memory_usage"] = torch.cuda.max_memory_allocated() / 1024 / 1024  # in MB
         
         if self.enable_detailed_performance_analysis:
-            # Additional detailed metrics
             module_metrics["flops"] = self._estimate_flops(module, inputs)
             module_metrics["parameter_count"] = sum(p.numel() for p in module.parameters())
             module_metrics["trainable_parameter_count"] = sum(p.numel() for p in module.parameters() if p.requires_grad)
@@ -297,62 +295,45 @@ class TorchScriptManager:
         return module_metrics
 
     def generate_cpp_loading_code(self, module_name: str, path: str) -> str:
-        """
-        Generate C++ code for loading a compiled module and performing inference.
-        
-        Args:
-            module_name (str): Name of the compiled module.
-            path (str): Path where the module is saved.
-        
-        Returns:
-            str: C++ code for loading the module and performing inference.
-        """
         if not self.enable_cpp_code_generation:
             raise ValueError("C++ code generation is not enabled. Set enable_cpp_code_generation to True.")
         
         return f"""
-#include <torch/script.h>
-#include <torch/nn/functional/activation.h>
-#include <iostream>
+        #include <torch/script.h>
+        #include <torch/nn/functional/activation.h>
+        #include <iostream>
 
-int main() {{
-    torch::jit::script::Module module;
-    try {{
-        module = torch::jit::load("{path}");
-        std::cout << "Model {module_name} loaded successfully\\n";
-    }}
-    catch (const c10::Error& e) {{
-        std::cerr << "Error loading the model\\n";
-        std::cerr << e.what() << std::endl;
-        return -1;
-    }}
-    
-    // Prepare input tensor
-    std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(torch::rand({{1, 3, 224, 224}}));
+        int main() {{
+            torch::jit::script::Module module;
+            try {{
+                module = torch::jit::load("{path}");
+                std::cout << "Model {module_name} loaded successfully\\n";
+            }}
+            catch (const c10::Error& e) {{
+                std::cerr << "Error loading the model\\n";
+                std::cerr << e.what() << std::endl;
+                return -1;
+            }}
+            
+            std::vector<torch::jit::IValue> inputs;
+            inputs.push_back(torch::rand({{1, 3, 224, 224}}));
 
-    // Perform inference
-    torch::NoGradGuard no_grad;
-    module.eval();
-    at::Tensor output = module.forward(inputs).toTensor();
+            torch::NoGradGuard no_grad;
+            module.eval();
+            at::Tensor output = module.forward(inputs).toTensor();
 
-    // Process output
-    namespace F = torch::nn::functional;
-    at::Tensor output_sm = F::softmax(output, F::SoftmaxFuncOptions(1));
-    std::tuple<at::Tensor, at::Tensor> top5_tensor = output_sm.topk(5);
-    at::Tensor top5 = std::get<1>(top5_tensor);
+            namespace F = torch::nn::functional;
+            at::Tensor output_sm = F::softmax(output, F::SoftmaxFuncOptions(1));
+            std::tuple<at::Tensor, at::Tensor> top5_tensor = output_sm.topk(5);
+            at::Tensor top5 = std::get<1>(top5_tensor);
 
-    std::cout << "Top 5 predictions:\\n" << top5[0] << std::endl;
+            std::cout << "Top 5 predictions:\\n" << top5[0] << std::endl;
 
-    return 0;
-}}
-"""
+            return 0;
+        }}
+        """
 
     def _estimate_flops(self, module: torch.jit.ScriptModule, inputs: Any) -> int:
-        """
-        Estimate the number of floating-point operations (FLOPs) for a module.
-        This is a simplified estimation and may not be accurate for all model architectures.
-        """
         def count_convolutions(mod):
             flops = 0
             for m in mod.modules():
@@ -363,4 +344,37 @@ int main() {{
 
         return count_convolutions(module)
 
-    
+    def print_graph(self, module: torch.jit.ScriptModule):
+        """Print the graph of a TorchScript module for debugging."""
+        print(module.graph)
+
+    def disable_jit_compilation(self, disable: bool = True):
+        """Disable JIT compilation for debugging purposes."""
+        self.disable_jit = disable
+        if disable:
+            print("JIT compilation disabled. Use for debugging only.")
+        else:
+            print("JIT compilation enabled.")
+
+    def export_settings(self) -> Dict[str, Any]:
+        """Export current compilation and optimization settings."""
+        return {
+            "compilation_method": self.compilation_method,
+            "use_mixed_compilation": self.use_mixed_compilation,
+            "enable_freezing": self.enable_freezing,
+            "enable_cpp_code_generation": self.enable_cpp_code_generation,
+            "enable_sanity_check": self.enable_sanity_check,
+            "enable_detailed_performance_analysis": self.enable_detailed_performance_analysis,
+            "disable_jit": self.disable_jit
+        }
+
+    @staticmethod
+    def create_torchscript_class(class_def: type) -> torch.jit.ScriptModule:
+        """Create a TorchScript class from a Python class definition."""
+        return torch.jit.script(class_def)
+
+    @staticmethod
+    def add_builtin_function(module: torch.jit.ScriptModule, func_name: str, func: Callable):
+        """Add a built-in function to a TorchScript module."""
+        torch.jit.script_if_tracing(func)
+        setattr(module, func_name, func)

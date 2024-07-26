@@ -18,7 +18,11 @@ CODED
 
 ## [Model Freezing in TorchScript](https://pytorch.org/tutorials/prototype/torchscript_freezing.html)
 
+CODED
+
 ## [torch.jit](https://pytorch.org/docs/master/jit.html)
+
+CODED
 
 ## [Dynamic Parallelism in TorchScript](https://pytorch.org/tutorials/advanced/torch-script-parallelism.html?highlight=torchscript)
 
