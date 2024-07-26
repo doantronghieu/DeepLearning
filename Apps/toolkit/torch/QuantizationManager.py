@@ -14,6 +14,10 @@ from torch.ao.quantization import (
 )
 from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 import torch.quantization._numeric_suite as ns
+from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
+from torch.ao.quantization.quantizer import Quantizer
+from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
+from torch._export import capture_pre_autograd_graph
 
 class QuantizationManager:
     def __init__(
@@ -43,31 +47,51 @@ class QuantizationManager:
 
     def quantize(
         self, 
-        qconfig_mapping: Optional[QConfigMapping] = None, 
-        dtype: torch.dtype = torch.qint8, 
+        quantizer: Optional[Quantizer] = None,
+        backend: str = 'x86',
         static: bool = True,
         per_channel: bool = False,
-        backend: str = 'x86'
+        dtype: torch.dtype = torch.qint8
     ) -> nn.Module:
         try:
-            if qconfig_mapping is None:
-                qconfig_mapping = get_default_qconfig_mapping(backend)
-            
-            if per_channel:
-                qconfig_mapping = QConfigMapping().set_global(
-                    get_default_qconfig(backend, per_channel_weight=True)
-                )
-            
-            self.logger.info("Applying FX Graph Mode Quantization...")
+            if quantizer is None:
+                quantizer = XNNPACKQuantizer()
+                if per_channel:
+                    quantizer.set_global(get_symmetric_quantization_config())
+                else:
+                    quantizer.set_global(get_symmetric_quantization_config())
+
+            self.logger.info("Applying PyTorch 2 Export Quantization...")
+            example_inputs = self._get_example_inputs()
+            exported_model = capture_pre_autograd_graph(self.float_model, example_inputs)
+
             if static:
-                self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
+                self.quantized_model = self._static_quantize_pt2e(exported_model, quantizer)
             else:
-                self.quantized_model = self._dynamic_quantize_fx(qconfig_mapping, dtype, backend)
+                self.quantized_model = self._dynamic_quantize_pt2e(exported_model, quantizer)
+
             return self.quantized_model
         except Exception as e:
             self.logger.error(f"Quantization failed: {str(e)}")
             raise
+    
+    def _static_quantize_pt2e(self, exported_model: nn.Module, quantizer: Quantizer) -> nn.Module:
+        prepared_model = prepare_pt2e(exported_model, quantizer)
 
+        self.logger.info("Performing calibration for static quantization...")
+        calibration_data = self._get_calibration_data()
+        with torch.no_grad():
+            for data in calibration_data:
+                prepared_model(data)
+
+        quantized_model = convert_pt2e(prepared_model)
+        return quantized_model
+
+    def _dynamic_quantize_pt2e(self, exported_model: nn.Module, quantizer: Quantizer) -> nn.Module:
+        prepared_model = prepare_pt2e(exported_model, quantizer)
+        quantized_model = convert_pt2e(prepared_model)
+        return quantized_model
+    
     def _static_quantize_fx(
         self, 
         qconfig_mapping: QConfigMapping, 
@@ -250,25 +274,28 @@ class QuantizationManager:
 
         return fp32_accuracy, int8_accuracy
 
-    def export_quantized_model(
-        self, 
-        path: str
-    ) -> None:
-        """
-        Export the quantized model to a file.
-        
-        Args:
-            path (str): Path to save the quantized model.
-        """
+    def export_quantized_model(self, path: str) -> None:
         if self.quantized_model is None:
             self.logger.error("No quantized model available to export.")
             return
 
         try:
-            torch.jit.save(torch.jit.script(self.quantized_model), path)
+            example_inputs = self._get_example_inputs()
+            quantized_ep = torch.export.export(self.quantized_model, example_inputs)
+            torch.export.save(quantized_ep, path)
             self.logger.info(f"Quantized model exported to {path}")
         except Exception as e:
             self.logger.error(f"Failed to export quantized model: {str(e)}")
+            raise
+    
+    def load_quantized_model(self, path: str) -> nn.Module:
+        try:
+            loaded_quantized_ep = torch.export.load(path)
+            self.quantized_model = loaded_quantized_ep.module()
+            self.logger.info(f"Quantized model loaded from {path}")
+            return self.quantized_model
+        except Exception as e:
+            self.logger.error(f"Failed to load quantized model: {str(e)}")
             raise
 
     def compare_outputs_detailed(
@@ -441,6 +468,27 @@ class QuantizationManager:
                 self.logger.info(f"{key} module error: {error:.2f} dB")
         
         return ob_dict
+
+    def compare_model_representations(self, input_data: torch.Tensor) -> Dict[str, torch.Tensor]:
+        results = {}
+        with torch.no_grad():
+            fp32_out = self.float_model(input_data)
+            int8_out = self.quantized_model(input_data) if self.quantized_model else torch.tensor([])
+
+        results['fp32_out'] = fp32_out
+        results['int8_out'] = int8_out
+        results['q_dq_representation'] = self._get_q_dq_representation(self.quantized_model)
+        results['reference_quantized_representation'] = self._get_reference_quantized_representation(self.quantized_model)
+
+        return results
+
+    def _get_q_dq_representation(self, model: nn.Module) -> Dict[str, torch.Tensor]:
+        # Implementation for Q/DQ representation
+        pass
+
+    def _get_reference_quantized_representation(self, model: nn.Module) -> Dict[str, torch.Tensor]:
+        # Implementation for Reference Quantized Model representation
+        pass
 
     def analyze_performance(
         self, 
