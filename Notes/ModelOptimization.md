@@ -2,25 +2,17 @@
 
 ## [Introduction to Quantization on PyTorch](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/)
 
-TODO
+CODED
 
 ## [Dynamic Quantization](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html)
 
+CODED
+
 ## [Dynamic Quantization on an LSTM Word Language Model](https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html)
 
-TODO
+CODED
 
 ## [Dynamic Quantization on BERT](https://pytorch.org/tutorials/intermediate/dynamic_quantization_bert_tutorial.html)
-
-TODO
-
-## [Automatic Mixed Precision](https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html)
-
-## [Automatic Mixed Precision examples](https://pytorch.org/docs/stable/notes/amp_examples.html)
-
-## [Automatic Mixed Precision package - torch.amp](https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html)
-
-TODO
 
 ## [Performance Tuning Guide](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html)
 
