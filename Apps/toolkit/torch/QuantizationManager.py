@@ -8,6 +8,7 @@ import time
 import logging
 from typing import Dict, List, Tuple, Union, Optional, Callable
 from torch.quantization.quantize_fx import prepare_fx, convert_fx
+from torch.ao.quantization.backend_config import BackendConfig, get_native_backend_config
 from torch.ao.quantization import (
   get_default_qconfig, QConfigMapping, prepare, convert, fuse_modules,
   get_default_qat_qconfig, prepare_qat
@@ -27,6 +28,7 @@ class QuantizationManager:
         self.prepare_custom_config = {}
         self.convert_custom_config = {}
         self.use_pt2e = False
+        self.backend_config = get_native_backend_config()  # Default backend config
 
     def _setup_logger(
         self
@@ -44,6 +46,11 @@ class QuantizationManager:
     ) -> Tuple:
         raise NotImplementedError("Example inputs method needs to be implemented")
 
+    def set_backend_config(self, backend_config: BackendConfig) -> None:
+        """Set a custom BackendConfig for quantization."""
+        self.backend_config = backend_config
+        self.logger.info("Custom BackendConfig set.")
+    
     def quantize(
         self, 
         quantizer: Optional[Quantizer] = None,
@@ -72,7 +79,6 @@ class QuantizationManager:
                 else:
                     self.quantized_model = self._dynamic_quantize_pt2e(exported_model, quantizer)
             else:
-                # Existing quantization logic
                 qconfig_mapping = get_default_qconfig_mapping(backend)
                 if static:
                     self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
@@ -113,8 +119,10 @@ class QuantizationManager:
         model_to_quantize = self.fuse_modules(model_to_quantize)
         
         example_inputs = self._get_example_inputs()
-        prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs, 
-                                    prepare_custom_config=self.prepare_custom_config)
+        prepared_model = prepare_fx(
+            model_to_quantize, qconfig_mapping, example_inputs, prepare_custom_config=self.prepare_custom_config,
+            backend_config=self.backend_config
+        )
         
         self.logger.info("Performing calibration for static quantization...")
         calibration_data = self._get_calibration_data()
@@ -136,11 +144,12 @@ class QuantizationManager:
         
         example_inputs = self._get_example_inputs()
         prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs,
-                                    prepare_custom_config=self.prepare_custom_config)
+                                    prepare_custom_config=self.prepare_custom_config,
+                                    backend_config=self.backend_config)
         
         quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config, dtype=dtype)
         return quantized_model
-      
+  
     def _get_calibration_data(
         self
     ) -> List[torch.Tensor]:
