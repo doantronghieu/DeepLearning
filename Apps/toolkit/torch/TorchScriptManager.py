@@ -14,6 +14,7 @@ class TorchScriptManager:
         self.enable_detailed_performance_analysis = False
         self.enable_freezing = False
         self.disable_jit = False
+        self.enable_dynamic_parallelism = False
         
     def compile_module(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
         """
@@ -41,7 +42,10 @@ class TorchScriptManager:
                 compiled_module = self.trace_module(module, {"forward": example_inputs})
             else:
                 raise ValueError(f"Invalid compilation method: {self.compilation_method}")
-            
+              
+            if self.enable_dynamic_parallelism:
+                compiled_module = self.add_fork_wait_support(compiled_module)
+                
             if self.use_mixed_compilation:
                 compiled_module = self.apply_mixed_compilation(compiled_module)
             
@@ -87,6 +91,27 @@ class TorchScriptManager:
             print(f"Original model top 5 results:\n  {original_top5}")
             print(f"Compiled model top 5 results:\n  {compiled_top5}")
 
+    def add_fork_wait_support(self, module: torch.jit.ScriptModule) -> torch.jit.ScriptModule:
+        """
+        Add support for dynamic parallelism using fork and wait.
+        
+        Args:
+            module (torch.jit.ScriptModule): The module to add fork and wait support to.
+        
+        Returns:
+            torch.jit.ScriptModule: The module with fork and wait support.
+        """
+        def fork_wrapper(func):
+            return torch.jit.fork(func)
+
+        def wait_wrapper(future):
+            return torch.jit.wait(future)
+
+        module.define("fork_wrapper", fork_wrapper)
+        module.define("wait_wrapper", wait_wrapper)
+        
+        return module
+    
     def freeze_module(self, module: torch.jit.ScriptModule, preserve_methods: List[str] = []) -> torch.jit.ScriptModule:
         """
         Freeze a ScriptModule, inlining all submodules, parameters, and attributes.
@@ -244,28 +269,57 @@ class TorchScriptManager:
         # module should be traced and which should be scripted.
         return module
 
-    def analyze_performance(self, module: torch.jit.ScriptModule, inputs: Any) -> Dict[str, float]:
+    def parallelize_module(self, module: torch.jit.ScriptModule) -> torch.jit.ScriptModule:
         """
-        Analyze the performance of a compiled module, including comparison with a frozen version if freezing is enabled.
+        Attempt to automatically parallelize suitable parts of a module.
+        
+        Args:
+            module (torch.jit.ScriptModule): The module to parallelize.
+        
+        Returns:
+            torch.jit.ScriptModule: The parallelized module.
+        """
+        # This is a placeholder implementation. In a real-world scenario,
+        # you would need to implement logic to identify parallelizable parts
+        # of the module and apply fork and wait appropriately.
+        return module
+    
+    def analyze_performance(self, module: torch.jit.ScriptModule, inputs: Any) -> Dict[str, Dict[str, float]]:
+        """
+        Analyze the performance of a compiled module, including parallel execution if enabled.
         
         Args:
             module (torch.jit.ScriptModule): The compiled module to analyze.
             inputs (Any): Inputs to use for performance testing.
         
         Returns:
-            Dict[str, float]: A dictionary containing performance metrics.
+            Dict[str, Dict[str, float]]: A dictionary containing performance metrics for different versions of the module.
         """
         metrics = {}
         
-        # Analyze non-frozen module
-        metrics["non_frozen"] = self._run_performance_analysis(module, inputs)
+        # Analyze non-parallelized module
+        metrics["original"] = self._run_performance_analysis(module, inputs)
         
         # Analyze frozen module if freezing is enabled
         if self.enable_freezing:
             frozen_module = self.freeze_module(module)
             metrics["frozen"] = self._run_performance_analysis(frozen_module, inputs)
         
+        # Analyze parallelized module if dynamic parallelism is enabled
+        if self.enable_dynamic_parallelism:
+            parallelized_module = self.parallelize_module(module)
+            metrics["parallelized"] = self._run_performance_analysis(parallelized_module, inputs)
+        
         return metrics
+
+    def enable_dynamic_parallelism(self, enabled: bool = True):
+        """
+        Enable or disable dynamic parallelism support.
+        
+        Args:
+            enabled (bool): Whether to enable dynamic parallelism.
+        """
+        self.enable_dynamic_parallelism = enabled
 
     def _run_performance_analysis(self, module: torch.jit.ScriptModule, inputs: Any) -> Dict[str, float]:
         """Helper method to run performance analysis on a module"""
