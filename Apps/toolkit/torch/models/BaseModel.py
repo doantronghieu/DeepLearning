@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-import matplotlib.pyplot as plt
 from torchmetrics import MetricCollection
 from pathlib import Path
 from typing import Tuple, List, Dict, Union, Callable, Optional, Any, TypeVar, Type
@@ -637,6 +635,16 @@ class ModelAnalyzer:
         
         return attributions.squeeze().cpu().detach().numpy(), approximation_error
 
+    def print_model_summary(self, input_size: Tuple[int, ...]):
+        """
+        Print a summary of the model using torchinfo.
+        
+        Args:
+            input_size (Tuple[int, ...]): The input size for the model, e.g., (1, 3, 224, 224)
+        """
+        model_summary = summary(self.model, input_size=input_size, device=self.model.config.device)
+        logger.info(f"Model Summary:\n{model_summary}")
+
 class HyperparameterTuner:
     def __init__(self, model_class: Type[BaseModel], dataset: BaseDataset, config: ModelConfig):
         self.model_class = model_class
@@ -901,3 +909,4 @@ class ModelServer:
             yield self
         finally:
             loop.run_until_complete(self.stop_server(process))
+
