@@ -14,20 +14,19 @@ from torch.ao.quantization import (
 )
 from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 import torch.quantization._numeric_suite as ns
-from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
+from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e, prepare_qat_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from torch._export import capture_pre_autograd_graph
 
 class QuantizationManager:
-    def __init__(
-        self, model: nn.Module
-    ) -> None:
+    def __init__(self, model: nn.Module) -> None:
         self.float_model = model
         self.quantized_model = None
         self.logger = self._setup_logger()
         self.prepare_custom_config = {}
         self.convert_custom_config = {}
+        self.use_pt2e = False
 
     def _setup_logger(
         self
@@ -51,30 +50,40 @@ class QuantizationManager:
         backend: str = 'x86',
         static: bool = True,
         per_channel: bool = False,
-        dtype: torch.dtype = torch.qint8
+        dtype: torch.dtype = torch.qint8,
+        use_pt2e: bool = False
     ) -> nn.Module:
         try:
-            if quantizer is None:
-                quantizer = XNNPACKQuantizer()
-                if per_channel:
-                    quantizer.set_global(get_symmetric_quantization_config())
+            self.use_pt2e = use_pt2e
+            if use_pt2e:
+                if quantizer is None:
+                    quantizer = XNNPACKQuantizer()
+                    if per_channel:
+                        quantizer.set_global(get_symmetric_quantization_config())
+                    else:
+                        quantizer.set_global(get_symmetric_quantization_config())
+
+                self.logger.info("Applying PyTorch 2 Export Quantization...")
+                example_inputs = self._get_example_inputs()
+                exported_model = capture_pre_autograd_graph(self.float_model, example_inputs)
+
+                if static:
+                    self.quantized_model = self._static_quantize_pt2e(exported_model, quantizer)
                 else:
-                    quantizer.set_global(get_symmetric_quantization_config())
-
-            self.logger.info("Applying PyTorch 2 Export Quantization...")
-            example_inputs = self._get_example_inputs()
-            exported_model = capture_pre_autograd_graph(self.float_model, example_inputs)
-
-            if static:
-                self.quantized_model = self._static_quantize_pt2e(exported_model, quantizer)
+                    self.quantized_model = self._dynamic_quantize_pt2e(exported_model, quantizer)
             else:
-                self.quantized_model = self._dynamic_quantize_pt2e(exported_model, quantizer)
+                # Existing quantization logic
+                qconfig_mapping = get_default_qconfig_mapping(backend)
+                if static:
+                    self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
+                else:
+                    self.quantized_model = self._dynamic_quantize_fx(qconfig_mapping, dtype, backend)
 
             return self.quantized_model
         except Exception as e:
             self.logger.error(f"Quantization failed: {str(e)}")
             raise
-    
+
     def _static_quantize_pt2e(self, exported_model: nn.Module, quantizer: Quantizer) -> nn.Module:
         prepared_model = prepare_pt2e(exported_model, quantizer)
 
@@ -91,7 +100,7 @@ class QuantizationManager:
         prepared_model = prepare_pt2e(exported_model, quantizer)
         quantized_model = convert_pt2e(prepared_model)
         return quantized_model
-    
+
     def _static_quantize_fx(
         self, 
         qconfig_mapping: QConfigMapping, 
@@ -162,25 +171,38 @@ class QuantizationManager:
         num_epochs: int,
         backend: str = 'x86'
     ) -> nn.Module:
-        qconfig = get_default_qat_qconfig(backend)
-        qat_model: nn.Module = prepare_qat(self.float_model, {'': qconfig})
+        if self.use_pt2e:
+            example_inputs = self._get_example_inputs()
+            exported_model = capture_pre_autograd_graph(self.float_model, example_inputs)
+            quantizer = XNNPACKQuantizer()
+            quantizer.set_global(get_symmetric_quantization_config(is_qat=True))
+            prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+        else:
+            qconfig = get_default_qat_qconfig(backend)
+            prepared_model = prepare_qat(self.float_model, {'': qconfig})
         
         for epoch in range(num_epochs):
-            qat_model.train()
+            # Training loop
+            prepared_model.train()
             for batch_idx, (data, target) in enumerate(train_loader):
                 optimizer.zero_grad()
-                output = qat_model(data)
+                output = prepared_model(data)
                 loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
             
-            qat_model.eval()
+            # Evaluation loop
+            prepared_model.eval()
             with torch.no_grad():
                 for data, target in test_loader:
-                    output = qat_model(data)
+                    output = prepared_model(data)
                     # Compute and log evaluation metrics
         
-        quantized_model = convert(qat_model.eval(), inplace=False)
+        if self.use_pt2e:
+            quantized_model = convert_pt2e(prepared_model)
+        else:
+            quantized_model = convert(prepared_model.eval(), inplace=False)
+        
         return quantized_model
 
     def compute_error(
@@ -409,12 +431,7 @@ class QuantizationManager:
 
         return results
 
-    def compare_weights_numeric_suite(
-        self
-    ) -> Dict[str, Dict[str, torch.Tensor]]:
-        """
-        Compare weights of float and quantized models using Numeric Suite.
-        """
+    def compare_weights_numeric_suite(self) -> Dict[str, Dict[str, torch.Tensor]]:
         if self.quantized_model is None:
             self.logger.error("No quantized model available for comparison.")
             return {}
@@ -428,13 +445,7 @@ class QuantizationManager:
         
         return wt_compare_dict
 
-    def compare_model_outputs_numeric_suite(
-        self, 
-        input_data: torch.Tensor
-    ) -> Dict[str, Dict[str, List[torch.Tensor]]]:
-        """
-        Compare model outputs at corresponding locations using Numeric Suite.
-        """
+    def compare_model_outputs_numeric_suite(self, input_data: torch.Tensor) -> Dict[str, Dict[str, List[torch.Tensor]]]:
         if self.quantized_model is None:
             self.logger.error("No quantized model available for comparison.")
             return {}
