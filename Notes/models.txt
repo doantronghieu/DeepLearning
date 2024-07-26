@@ -1,22 +1,15 @@
 ## BaseModel
 
-Input: model(nn.Module), optimizer, loss_fn, data, model_name, device, seedee
-- data: X_train, y_train, X_test, y_test
- 
-Methods: train(epochs, learning_rate, batch_size=32, seed), save(), load(), inference()
-- make_train_step(), make_eval_step()
-- compute_logits(), compute_prediction_probabilities(), compute_predictions(), compute_loss(), compute_metric(metric=[...e  ])
-- evaluate(mode=["eval", "test"])
-- plot_metric(): loss, accuracy
-
 continue generate the code, start from method "" ()
 
 Also consider:
 
 - Using Ray Train for training (Adding a toggle variable to indicate whether we want to use Ray Train.)
 
-
 - in ModelTrainer, why i do not see the input of callback, just see it init with empty list
+
+---
 
 - QuantizationManager
   - input: model (nn.Module)
+

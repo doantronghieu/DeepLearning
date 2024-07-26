@@ -893,12 +893,11 @@ class ModelServer:
             await process.wait()
             logger.info("Triton Inference Server stopped.")
 
-@contextmanager
-def model_server_context(model: BaseModel, config: ModelConfig, repository_path: str):
-    server = ModelServer(model, config)
-    loop = asyncio.get_event_loop()
-    process = loop.run_until_complete(server.start_server(repository_path))
-    try:
-        yield server
-    finally:
-        loop.run_until_complete(server.stop_server(process))
+    @contextmanager
+    def model_server_context(self, repository_path: str):
+        loop = asyncio.get_event_loop()
+        process = loop.run_until_complete(self.start_server(repository_path))
+        try:
+            yield self
+        finally:
+            loop.run_until_complete(self.stop_server(process))
