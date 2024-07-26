@@ -12,6 +12,7 @@ class TorchScriptManager:
         self.enable_cpp_code_generation = False  # Feature flag for C++ code generation
         self.enable_sanity_check = False  # Feature flag for sanity check
         self.enable_detailed_performance_analysis = False  # Feature flag for detailed performance analysis
+        self.enable_freezing = False  # Feature flag for model freezing
 
     def compile_module(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
         """
@@ -77,6 +78,44 @@ class TorchScriptManager:
             print("Warning: Sanity check failed. Original and compiled models produce different top 5 results.")
             print(f"Original model top 5 results:\n  {original_top5}")
             print(f"Compiled model top 5 results:\n  {compiled_top5}")
+
+    def freeze_module(self, module: torch.jit.ScriptModule, preserve_methods: List[str] = []) -> torch.jit.ScriptModule:
+        """
+        Freeze a ScriptModule, inlining all submodules, parameters, and attributes.
+        
+        Args:
+            module (torch.jit.ScriptModule): The module to freeze.
+            preserve_methods (List[str]): List of method names to preserve during freezing.
+        
+        Returns:
+            torch.jit.ScriptModule: The frozen module.
+        """
+        if not self.enable_freezing:
+            print("Warning: Freezing is disabled. Enable it by setting enable_freezing to True.")
+            return module
+        return torch.jit.freeze(module, preserve_methods)
+    
+    def optimize_module(self, module: torch.jit.ScriptModule) -> torch.jit.ScriptModule:
+        """
+        Apply various optimization techniques to the module, including freezing if enabled.
+        
+        Args:
+            module (torch.jit.ScriptModule): The module to optimize.
+        
+        Returns:
+            torch.jit.ScriptModule: The optimized module.
+        """
+        # Optimize for inference
+        module = torch.jit.optimize_for_inference(module)
+        
+        # Freeze the module if enabled
+        if self.enable_freezing:
+            module = self.freeze_module(module)
+        
+        # Enable oneDNN fusion
+        torch.jit.enable_onednn_fusion(True)
+        
+        return module
 
     def save_compiled_module(self, module_name: str, path: str) -> None:
         """
@@ -205,7 +244,7 @@ class TorchScriptManager:
 
     def analyze_performance(self, module: torch.jit.ScriptModule, inputs: Any) -> Dict[str, float]:
         """
-        Analyze the performance of a compiled module.
+        Analyze the performance of a compiled module, including comparison with a frozen version if freezing is enabled.
         
         Args:
             module (torch.jit.ScriptModule): The compiled module to analyze.
@@ -215,6 +254,20 @@ class TorchScriptManager:
             Dict[str, float]: A dictionary containing performance metrics.
         """
         metrics = {}
+        
+        # Analyze non-frozen module
+        metrics["non_frozen"] = self._run_performance_analysis(module, inputs)
+        
+        # Analyze frozen module if freezing is enabled
+        if self.enable_freezing:
+            frozen_module = self.freeze_module(module)
+            metrics["frozen"] = self._run_performance_analysis(frozen_module, inputs)
+        
+        return metrics
+
+    def _run_performance_analysis(self, module: torch.jit.ScriptModule, inputs: Any) -> Dict[str, float]:
+        """Helper method to run performance analysis on a module"""
+        module_metrics = {}
         
         # Warm-up run
         module(*inputs)
@@ -226,44 +279,23 @@ class TorchScriptManager:
             output = module(*inputs)
         end_time = time.time()
         
-        metrics["average_execution_time"] = (end_time - start_time) / num_runs
-        metrics["output_size"] = sum(o.numel() for o in output) if isinstance(output, tuple) else output.numel()
+        module_metrics["average_execution_time"] = (end_time - start_time) / num_runs
+        module_metrics["output_size"] = sum(o.numel() for o in output) if isinstance(output, tuple) else output.numel()
         
         # Memory usage (requires pytorch 1.6+)
         if hasattr(torch, 'cuda') and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
             output = module(*inputs)
-            metrics["peak_gpu_memory_usage"] = torch.cuda.max_memory_allocated() / 1024 / 1024  # in MB
+            module_metrics["peak_gpu_memory_usage"] = torch.cuda.max_memory_allocated() / 1024 / 1024  # in MB
         
         if self.enable_detailed_performance_analysis:
             # Additional detailed metrics
-            metrics["flops"] = self._estimate_flops(module, inputs)
-            metrics["parameter_count"] = sum(p.numel() for p in module.parameters())
-            metrics["trainable_parameter_count"] = sum(p.numel() for p in module.parameters() if p.requires_grad)
+            module_metrics["flops"] = self._estimate_flops(module, inputs)
+            module_metrics["parameter_count"] = sum(p.numel() for p in module.parameters())
+            module_metrics["trainable_parameter_count"] = sum(p.numel() for p in module.parameters() if p.requires_grad)
         
-        return metrics
+        return module_metrics
 
-    def optimize_module(self, module: torch.jit.ScriptModule) -> torch.jit.ScriptModule:
-        """
-        Apply various optimization techniques to the module.
-        
-        Args:
-            module (torch.jit.ScriptModule): The module to optimize.
-        
-        Returns:
-            torch.jit.ScriptModule: The optimized module.
-        """
-        # Optimize for inference
-        module = torch.jit.optimize_for_inference(module)
-        
-        # Freeze the module
-        module = torch.jit.freeze(module)
-        
-        # Enable oneDNN fusion
-        torch.jit.enable_onednn_fusion(True)
-        
-        return module
-    
     def generate_cpp_loading_code(self, module_name: str, path: str) -> str:
         """
         Generate C++ code for loading a compiled module and performing inference.
