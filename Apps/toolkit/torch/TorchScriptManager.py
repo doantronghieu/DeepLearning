@@ -2,6 +2,7 @@
 import torch
 from typing import Any, Callable, List, Optional, Tuple, Union, Dict
 import time
+import torch.nn.functional as F
 
 class TorchScriptManager:
     def __init__(self):
@@ -9,6 +10,8 @@ class TorchScriptManager:
         self.use_mixed_compilation = False
         self.compilation_method = "auto"  # Can be "auto", "trace", or "script"
         self.enable_cpp_code_generation = False  # Feature flag for C++ code generation
+        self.enable_sanity_check = False  # Feature flag for sanity check
+        self.enable_detailed_performance_analysis = False  # Feature flag for detailed performance analysis
 
     def compile_module(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
         """
@@ -35,11 +38,15 @@ class TorchScriptManager:
                 compiled_module = self.apply_mixed_compilation(compiled_module)
             
             self.compiled_modules[type(module).__name__] = compiled_module
+            
+            if self.enable_sanity_check:
+                self.sanity_check(module, compiled_module, example_inputs)
+            
             return compiled_module
         except Exception as e:
             print(f"Compilation failed: {str(e)}")
             raise
-    
+
     def _compile_auto(self, module: torch.nn.Module, example_inputs: Any) -> torch.jit.ScriptModule:
         """Helper method for auto compilation"""
         try:
@@ -48,6 +55,29 @@ class TorchScriptManager:
             print(f"Scripting failed, falling back to tracing. Error: {str(e)}")
             return torch.jit.trace(module, example_inputs)
     
+    def sanity_check(self, original_module: torch.nn.Module, compiled_module: torch.jit.ScriptModule, example_inputs: Any):
+        """
+        Perform a sanity check to ensure the compiled module produces the same output as the original module.
+        
+        Args:
+            original_module (torch.nn.Module): The original PyTorch module.
+            compiled_module (torch.jit.ScriptModule): The compiled TorchScript module.
+            example_inputs (Any): Example inputs to use for the sanity check.
+        """
+        with torch.no_grad():
+            original_output = original_module(example_inputs)
+            compiled_output = compiled_module(example_inputs)
+
+        original_top5 = F.softmax(original_output, dim=1).topk(5).indices
+        compiled_top5 = F.softmax(compiled_output, dim=1).topk(5).indices
+
+        if torch.equal(original_top5, compiled_top5):
+            print("Sanity check passed: Original and compiled models produce the same top 5 results.")
+        else:
+            print("Warning: Sanity check failed. Original and compiled models produce different top 5 results.")
+            print(f"Original model top 5 results:\n  {original_top5}")
+            print(f"Compiled model top 5 results:\n  {compiled_top5}")
+
     def save_compiled_module(self, module_name: str, path: str) -> None:
         """
         Save a compiled module to disk.
@@ -191,11 +221,12 @@ class TorchScriptManager:
         
         # Measure execution time
         start_time = time.time()
-        for _ in range(100):  # Run 100 times for more accurate measurement
+        num_runs = 100
+        for _ in range(num_runs):
             output = module(*inputs)
         end_time = time.time()
         
-        metrics["average_execution_time"] = (end_time - start_time) / 100
+        metrics["average_execution_time"] = (end_time - start_time) / num_runs
         metrics["output_size"] = sum(o.numel() for o in output) if isinstance(output, tuple) else output.numel()
         
         # Memory usage (requires pytorch 1.6+)
@@ -203,6 +234,12 @@ class TorchScriptManager:
             torch.cuda.reset_peak_memory_stats()
             output = module(*inputs)
             metrics["peak_gpu_memory_usage"] = torch.cuda.max_memory_allocated() / 1024 / 1024  # in MB
+        
+        if self.enable_detailed_performance_analysis:
+            # Additional detailed metrics
+            metrics["flops"] = self._estimate_flops(module, inputs)
+            metrics["parameter_count"] = sum(p.numel() for p in module.parameters())
+            metrics["trainable_parameter_count"] = sum(p.numel() for p in module.parameters() if p.requires_grad)
         
         return metrics
 
@@ -229,33 +266,69 @@ class TorchScriptManager:
     
     def generate_cpp_loading_code(self, module_name: str, path: str) -> str:
         """
-        Generate C++ code for loading a compiled module.
+        Generate C++ code for loading a compiled module and performing inference.
         
         Args:
             module_name (str): Name of the compiled module.
             path (str): Path where the module is saved.
         
         Returns:
-            str: C++ code for loading the module.
+            str: C++ code for loading the module and performing inference.
         """
         if not self.enable_cpp_code_generation:
             raise ValueError("C++ code generation is not enabled. Set enable_cpp_code_generation to True.")
         
         return f"""
 #include <torch/script.h>
+#include <torch/nn/functional/activation.h>
 #include <iostream>
 
 int main() {{
     torch::jit::script::Module module;
     try {{
         module = torch::jit::load("{path}");
+        std::cout << "Model {module_name} loaded successfully\\n";
     }}
     catch (const c10::Error& e) {{
         std::cerr << "Error loading the model\\n";
+        std::cerr << e.what() << std::endl;
         return -1;
     }}
     
-    std::cout << "Model {module_name} loaded successfully\\n";
+    // Prepare input tensor
+    std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(torch::rand({{1, 3, 224, 224}}));
+
+    // Perform inference
+    torch::NoGradGuard no_grad;
+    module.eval();
+    at::Tensor output = module.forward(inputs).toTensor();
+
+    // Process output
+    namespace F = torch::nn::functional;
+    at::Tensor output_sm = F::softmax(output, F::SoftmaxFuncOptions(1));
+    std::tuple<at::Tensor, at::Tensor> top5_tensor = output_sm.topk(5);
+    at::Tensor top5 = std::get<1>(top5_tensor);
+
+    std::cout << "Top 5 predictions:\\n" << top5[0] << std::endl;
+
     return 0;
 }}
 """
+
+    def _estimate_flops(self, module: torch.jit.ScriptModule, inputs: Any) -> int:
+        """
+        Estimate the number of floating-point operations (FLOPs) for a module.
+        This is a simplified estimation and may not be accurate for all model architectures.
+        """
+        def count_convolutions(mod):
+            flops = 0
+            for m in mod.modules():
+                if isinstance(m, torch.nn.Conv2d):
+                    flops += m.in_channels * m.out_channels * m.kernel_size[0] * m.kernel_size[1] * \
+                             inputs[0].size()[2] * inputs[0].size()[3] / m.stride[0] / m.stride[1]
+            return flops
+
+        return count_convolutions(module)
+
+    
