@@ -23,7 +23,6 @@ class QuantizationManager:
         self.prepare_custom_config = {}
         self.convert_custom_config = {}
 
-
     def _setup_logger(self) -> logging.Logger:
         """Set up a logger for the QuantizationManager."""
         logger = logging.getLogger(__name__)
@@ -38,7 +37,6 @@ class QuantizationManager:
         """Get example inputs for the model. Implement this method based on your model's input requirements."""
         raise NotImplementedError("Example inputs method needs to be implemented")
 
-    
     def quantize(self, qconfig_mapping: Optional[QConfigMapping] = None, 
                  dtype: torch.dtype = torch.qint8, 
                  static: bool = False,
@@ -77,13 +75,17 @@ class QuantizationManager:
         except Exception as e:
             self.logger.error(f"Quantization failed: {str(e)}")
             raise
-
+    
     def _static_quantize(self, qconfig_dict: Dict[str, torch.quantization.QConfig], 
-                         dtype: torch.dtype) -> nn.Module:
+                     dtype: torch.dtype) -> nn.Module:
         """Apply static quantization to the model with calibration."""
         model_to_quantize = self.float_model
         model_to_quantize.eval()
-        model_to_quantize.qconfig = get_default_qconfig('x86')
+        
+        # Use the provided qconfig_dict
+        torch.quantization.propagate_qconfig_(model_to_quantize, qconfig_dict)
+        
+        # Prepare the model for static quantization
         torch.quantization.prepare(model_to_quantize, inplace=True)
         
         # Calibration process
@@ -93,7 +95,8 @@ class QuantizationManager:
             for data in calibration_data:
                 model_to_quantize(data)
         
-        torch.quantization.convert(model_to_quantize, inplace=True)
+        # Convert the model to quantized version
+        torch.quantization.convert(model_to_quantize, inplace=True, dtype=dtype)
         return model_to_quantize
 
     def _static_quantize_fx(self, qconfig_mapping: QConfigMapping, 
@@ -113,11 +116,12 @@ class QuantizationManager:
             for data in calibration_data:
                 prepared_model(data)
         
-        quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config)
+        # Use dtype in convert_fx
+        quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config, dtype=dtype)
         return quantized_model
 
     def _dynamic_quantize_fx(self, qconfig_mapping: QConfigMapping, 
-                             dtype: torch.dtype) -> nn.Module:
+                            dtype: torch.dtype) -> nn.Module:
         """Apply dynamic quantization using FX Graph Mode."""
         model_to_quantize = self.float_model
         model_to_quantize.eval()
@@ -125,9 +129,11 @@ class QuantizationManager:
         example_inputs = self._get_example_inputs()
         prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs,
                                     prepare_custom_config=self.prepare_custom_config)
-        quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config)
+        
+        # Use dtype in convert_fx
+        quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config, dtype=dtype)
         return quantized_model
-
+      
     def _get_calibration_data(self) -> List[torch.Tensor]:
         """Get representative data for calibration."""
         # Implement this method to return a list of representative input tensors
