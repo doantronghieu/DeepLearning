@@ -15,7 +15,9 @@ from torch.ao.quantization import (
 from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 
 class QuantizationManager:
-    def __init__(self, model: nn.Module) -> None:
+    def __init__(
+        self, model: nn.Module
+    ) -> None:
         self.float_model = model
         self.quantized_model = None
         self.logger = self._setup_logger()
@@ -23,7 +25,6 @@ class QuantizationManager:
         self.convert_custom_config = {}
 
     def _setup_logger(self) -> logging.Logger:
-        """Set up a logger for the QuantizationManager."""
         logger = logging.getLogger(__name__)
         logger.setLevel(logging.INFO)
         handler = logging.StreamHandler()
@@ -33,29 +34,16 @@ class QuantizationManager:
         return logger
 
     def _get_example_inputs(self) -> Tuple:
-        """Get example inputs for the model. Implement this method based on your model's input requirements."""
         raise NotImplementedError("Example inputs method needs to be implemented")
 
-    def quantize(self, qconfig_mapping: Optional[QConfigMapping] = None, 
-                 dtype: torch.dtype = torch.qint8, 
-                 static: bool = False,
-                 use_fx: bool = True,
-                 per_channel: bool = False,
-                 backend: str = 'x86') -> nn.Module:
-        """
-        Apply quantization to the model with support for per-channel quantization.
-        
-        Args:
-            qconfig_mapping (Optional[QConfigMapping]): Quantization configuration mapping.
-            dtype (torch.dtype): Data type for quantization (default: torch.qint8).
-            static (bool): Whether to use static quantization (default: False).
-            use_fx (bool): Whether to use FX Graph Mode Quantization (default: True).
-            per_channel (bool): Whether to use per-channel quantization (default: False).
-            backend (str): Quantization backend to use ('x86' or 'qnnpack', default: 'x86').
-        
-        Returns:
-            nn.Module: The quantized model.
-        """
+    def quantize(
+        self, 
+        qconfig_mapping: Optional[QConfigMapping] = None, 
+        dtype: torch.dtype = torch.qint8, 
+        static: bool = True,
+        per_channel: bool = False,
+        backend: str = 'x86'
+    ) -> nn.Module:
         try:
             if qconfig_mapping is None:
                 qconfig_mapping = get_default_qconfig_mapping(backend)
@@ -65,48 +53,22 @@ class QuantizationManager:
                     get_default_qconfig(backend, per_channel_weight=True)
                 )
             
-            if use_fx:
-                self.logger.info("Applying FX Graph Mode Quantization...")
-                if static:
-                    self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
-                else:
-                    self.quantized_model = self._dynamic_quantize_fx(qconfig_mapping, dtype, backend)
+            self.logger.info("Applying FX Graph Mode Quantization...")
+            if static:
+                self.quantized_model = self._static_quantize_fx(qconfig_mapping, dtype, backend)
             else:
-                if static:
-                    self.logger.info("Applying static quantization...")
-                    self.quantized_model = self._static_quantize(qconfig_mapping, dtype, backend)
-                else:
-                    self.logger.info("Applying dynamic quantization...")
-                    self.quantized_model = torch.quantization.quantize_dynamic(
-                        self.float_model, qconfig_mapping, dtype=dtype
-                    )
+                self.quantized_model = self._dynamic_quantize_fx(qconfig_mapping, dtype, backend)
             return self.quantized_model
         except Exception as e:
             self.logger.error(f"Quantization failed: {str(e)}")
             raise
 
-    def _static_quantize(self, qconfig_mapping: QConfigMapping, 
-                         dtype: torch.dtype, backend: str) -> nn.Module:
-        """Apply static quantization to the model with improved calibration."""
-        model_to_quantize = self.float_model
-        model_to_quantize.eval()
-        
-        model_to_quantize = self.fuse_modules(model_to_quantize)
-        
-        prepare(model_to_quantize, qconfig_mapping, inplace=True)
-        
-        self.logger.info("Performing calibration for static quantization...")
-        calibration_data = self._get_calibration_data()
-        with torch.no_grad():
-            for data in calibration_data:
-                model_to_quantize(data)
-        
-        convert(model_to_quantize, inplace=True)
-        return model_to_quantize
-
-    def _static_quantize_fx(self, qconfig_mapping: QConfigMapping, 
-                            dtype: torch.dtype, backend: str) -> nn.Module:
-        """Apply static quantization using FX Graph Mode with improved calibration."""
+    def _static_quantize_fx(
+        self, 
+        qconfig_mapping: QConfigMapping, 
+        dtype: torch.dtype, 
+        backend: str
+    ) -> nn.Module:
         model_to_quantize = self.float_model
         model_to_quantize.eval()
         
@@ -125,9 +87,12 @@ class QuantizationManager:
         quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config)
         return quantized_model
 
-    def _dynamic_quantize_fx(self, qconfig_mapping: QConfigMapping, 
-                            dtype: torch.dtype) -> nn.Module:
-        """Apply dynamic quantization using FX Graph Mode."""
+    def _dynamic_quantize_fx(
+        self, 
+        qconfig_mapping: QConfigMapping, 
+        dtype: torch.dtype, 
+        backend: str
+    ) -> nn.Module:
         model_to_quantize = self.float_model
         model_to_quantize.eval()
         
@@ -135,41 +100,39 @@ class QuantizationManager:
         prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs,
                                     prepare_custom_config=self.prepare_custom_config)
         
-        # Use dtype in convert_fx
         quantized_model = convert_fx(prepared_model, convert_custom_config=self.convert_custom_config, dtype=dtype)
         return quantized_model
       
-    def _get_calibration_data(self) -> List[torch.Tensor]:
-        """Get representative data for calibration."""
-        # Implement this method to return a list of representative input tensors
+    def _get_calibration_data(
+        self
+    ) -> List[torch.Tensor]:
         raise NotImplementedError("Calibration data method needs to be implemented")
 
-    def handle_non_traceable_modules(self, prepare_custom_config: Dict = None, 
-                                     convert_custom_config: Dict = None) -> None:
-        """
-        Configure handling of non-traceable modules for FX Graph Mode Quantization.
-        
-        Args:
-            prepare_custom_config (Dict): Custom configuration for prepare_fx.
-            convert_custom_config (Dict): Custom configuration for convert_fx.
-        """
+    def handle_non_traceable_modules(
+        self, 
+        prepare_custom_config: Dict = None, 
+        convert_custom_config: Dict = None
+    ) -> None:
         self.prepare_custom_config = prepare_custom_config or {}
         self.convert_custom_config = convert_custom_config or {}
 
-    def fuse_modules(self, model: nn.Module) -> nn.Module:
-        """Fuse modules for better performance."""
+    def fuse_modules(
+        self, 
+        model: nn.Module
+    ) -> nn.Module:
         model.eval()
         model = fuse_modules(model, [['conv', 'bn', 'relu']])
         return model
 
-    def quantization_aware_training(self, 
-                                    train_loader: DataLoader,
-                                    test_loader: DataLoader,
-                                    optimizer: torch.optim.Optimizer,
-                                    criterion: nn.Module,
-                                    num_epochs: int,
-                                    backend: str = 'x86') -> nn.Module:
-        """Perform Quantization-Aware Training (QAT)."""
+    def quantization_aware_training(
+        self, 
+        train_loader: DataLoader,
+        test_loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        criterion: nn.Module,
+        num_epochs: int,
+        backend: str = 'x86'
+    ) -> nn.Module:
         qconfig = get_default_qat_qconfig(backend)
         qat_model: nn.Module = prepare_qat(self.float_model, {'': qconfig})
         
@@ -191,8 +154,11 @@ class QuantizationManager:
         quantized_model = convert(qat_model.eval(), inplace=False)
         return quantized_model
    
-    def benchmark(self, input_data: torch.Tensor, num_runs: int = 100) -> Dict[str, float]:
-        """Perform comprehensive benchmarking of both float and quantized models."""
+    def benchmark(
+        self,
+        input_data: torch.Tensor,
+        num_runs: int = 100
+    ) -> Dict[str, float]:
         results = {}
         
         for model_name, model in [("float", self.float_model), ("quantized", self.quantized_model)]:
@@ -226,8 +192,10 @@ class QuantizationManager:
         
         return results
 
-    def compare_outputs_detailed(self, input_data: torch.Tensor) -> Dict[str, Union[float, torch.Tensor]]:
-        """Perform a detailed comparison of the outputs from both models, including histogram analysis."""
+    def compare_outputs_detailed(
+        self, 
+        input_data: torch.Tensor
+    ) -> Dict[str, Union[float, torch.Tensor]]:
         with torch.no_grad():
             fp32_out = self.float_model(input_data)
             int8_out = self.quantized_model(input_data) if self.quantized_model else torch.tensor([])
@@ -251,7 +219,9 @@ class QuantizationManager:
 
         return results
 
-    def compare_model_sizes(self) -> Tuple[float, float, float]:
+    def compare_model_sizes(
+      self
+    ) -> Tuple[float, float, float]:
         """
         Compare the sizes of the floating-point and quantized models.
         
@@ -274,8 +244,11 @@ class QuantizationManager:
 
         return fp32_size, int8_size, reduction_factor
 
-    def measure_latency(self, input_data: torch.Tensor, 
-                        num_runs: int = 100) -> Tuple[float, float]:
+    def measure_latency(
+        self, 
+        input_data: torch.Tensor, 
+        num_runs: int = 100
+    ) -> Tuple[float, float]:
         """
         Measure and compare the latency of the floating-point and quantized models.
         
@@ -306,7 +279,10 @@ class QuantizationManager:
 
         return fp32_latency, int8_latency
 
-    def compare_outputs(self, input_data: torch.Tensor) -> Tuple[float, float, float]:
+    def compare_outputs(
+        self, 
+        input_data: torch.Tensor
+    ) -> Tuple[float, float, float]:
         """
         Compare the outputs of the floating-point and quantized models.
         
@@ -330,7 +306,10 @@ class QuantizationManager:
 
         return fp32_mag, int8_mag, diff_mag
 
-    def evaluate_accuracy(self, eval_fn: Callable[[nn.Module], float]) -> Tuple[float, float]:
+    def evaluate_accuracy(
+        self, 
+        eval_fn: Callable[[nn.Module], float]
+    ) -> Tuple[float, float]:
         """
         Evaluate and compare the accuracy of the floating-point and quantized models.
         
@@ -348,7 +327,10 @@ class QuantizationManager:
 
         return fp32_accuracy, int8_accuracy
 
-    def export_quantized_model(self, path: str) -> None:
+    def export_quantized_model(
+        self, 
+        path: str
+    ) -> None:
         """
         Export the quantized model to a file.
         
@@ -366,8 +348,11 @@ class QuantizationManager:
             self.logger.error(f"Failed to export quantized model: {str(e)}")
             raise
 
-    def analyze_performance(self, input_data: torch.Tensor, 
-                            num_runs: int = 100) -> Dict[str, float]:
+    def analyze_performance(
+        self, 
+        input_data: torch.Tensor,
+        num_runs: int = 100
+    ) -> Dict[str, float]:
         """
         Perform detailed performance analysis of the models.
         
@@ -387,7 +372,10 @@ class QuantizationManager:
         
         return results
 
-    def _analyze_memory_usage(self, input_data: torch.Tensor) -> Tuple[float, float]:
+    def _analyze_memory_usage(
+        self, 
+        input_data: torch.Tensor
+    ) -> Tuple[float, float]:
         """
         Analyze memory usage of both models.
         
@@ -411,7 +399,10 @@ class QuantizationManager:
 
         return fp32_memory, int8_memory
 
-    def compare_outputs_detailed(self, input_data: torch.Tensor) -> Dict[str, float]:
+    def compare_outputs_detailed(
+        self,
+        input_data: torch.Tensor
+    ) -> Dict[str, float]:
         """
         Perform a detailed comparison of the outputs from both models.
         
@@ -440,31 +431,35 @@ class QuantizationManager:
 
         return results
     
-    def analyze_scalability(self, input_sizes: List[Tuple[int, ...]], num_runs: int = 10) -> Dict[str, List[float]]:
-      """Analyze scalability of both float and quantized models with different input sizes."""
-      results = {'float_latency': [], 'quantized_latency': [], 'input_sizes': []}
-      
-      for size in input_sizes:
-          input_data = torch.randn(*size)
-          results['input_sizes'].append(str(size))
-          
-          for model_name, model in [("float", self.float_model), ("quantized", self.quantized_model)]:
-              model.eval()
-              with torch.no_grad():
-                  torch.cuda.synchronize()
-                  start_time = time.perf_counter()
-                  for _ in range(num_runs):
-                      _ = model(input_data)
-                  torch.cuda.synchronize()
-                  end_time = time.perf_counter()
-              
-              latency = (end_time - start_time) * 1000 / num_runs  # Convert to ms
-              results[f'{model_name}_latency'].append(latency)
-      
-      self.logger.info("Scalability analysis results:")
-      for i, size in enumerate(results['input_sizes']):
-          self.logger.info(f"Input size: {size}")
-          self.logger.info(f"  Float model latency: {results['float_latency'][i]:.2f} ms")
-          self.logger.info(f"  Quantized model latency: {results['quantized_latency'][i]:.2f} ms")
-      
-      return results
+    def analyze_scalability(
+        self,
+        input_sizes: List[Tuple[int,
+        ...]],
+        num_runs: int = 10
+    ) -> Dict[str, List[float]]:
+        results = {'float_latency': [], 'quantized_latency': [], 'input_sizes': []}
+        
+        for size in input_sizes:
+            input_data = torch.randn(*size)
+            results['input_sizes'].append(str(size))
+            
+            for model_name, model in [("float", self.float_model), ("quantized", self.quantized_model)]:
+                model.eval()
+                with torch.no_grad():
+                    torch.cuda.synchronize()
+                    start_time = time.perf_counter()
+                    for _ in range(num_runs):
+                        _ = model(input_data)
+                    torch.cuda.synchronize()
+                    end_time = time.perf_counter()
+                
+                latency = (end_time - start_time) * 1000 / num_runs  # Convert to ms
+                results[f'{model_name}_latency'].append(latency)
+        
+        self.logger.info("Scalability analysis results:")
+        for i, size in enumerate(results['input_sizes']):
+            self.logger.info(f"Input size: {size}")
+            self.logger.info(f"  Float model latency: {results['float_latency'][i]:.2f} ms")
+            self.logger.info(f"  Quantized model latency: {results['quantized_latency'][i]:.2f} ms")
+        
+        return results
