@@ -74,9 +74,13 @@ CODED
 
 ### [Getting Started with DeviceMesh](https://pytorch.org/tutorials/recipes/distributed_device_mesh.html)
 
+CODED
+
 ## Tensor Parallel (TP)
 
 ### [torch.distributed.tensor.parallel](https://pytorch.org/docs/stable/distributed.tensor.parallel.html)
+
+!!!
 
 ### [Large Scale Transformer model training with Tensor Parallel (TP)](https://pytorch.org/tutorials/intermediate/TP_tutorial.html)
 
