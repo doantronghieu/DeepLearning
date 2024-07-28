@@ -58,6 +58,9 @@ class TrainingManager:
         fsdp_backward_prefetch: Optional[BackwardPrefetch] = None,
         fsdp_sharding_strategy: str = "FULL_SHARD",
         use_enhanced_fsdp: bool = False,
+        fsdp_mixed_precision: bool = False,
+        fsdp_forward_prefetch: bool = False,
+        fsdp_state_dict_type: str = "full",
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -80,9 +83,12 @@ class TrainingManager:
         self.enable_fsdp = enable_fsdp
         self.fsdp_cpu_offload = fsdp_cpu_offload
         self.fsdp_auto_wrap_policy = fsdp_auto_wrap_policy
-        self.fsdp_backward_prefetch = fsdp_backward_prefetch
         self.fsdp_sharding_strategy = fsdp_sharding_strategy
         self.use_enhanced_fsdp = use_enhanced_fsdp
+        self.fsdp_mixed_precision = fsdp_mixed_precision
+        self.fsdp_forward_prefetch = fsdp_forward_prefetch
+        self.fsdp_backward_prefetch = fsdp_backward_prefetch
+        self.fsdp_state_dict_type = fsdp_state_dict_type
         
         if self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp:
             self.setup_distributed()
@@ -138,12 +144,20 @@ class TrainingManager:
         if self.use_enhanced_fsdp:
             fsdp_config = {
                 "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
-                "backward_prefetch": self.fsdp_backward_prefetch,
                 "sharding_strategy": getattr(ShardingStrategy, self.fsdp_sharding_strategy),
+                "forward_prefetch": self.fsdp_forward_prefetch,
+                "backward_prefetch": self.fsdp_backward_prefetch,
             }
             
+            if self.fsdp_mixed_precision:
+                fsdp_config["mixed_precision"] = MixedPrecision(
+                    param_dtype=torch.float16,
+                    reduce_dtype=torch.float16,
+                    buffer_dtype=torch.float16,
+                )
+            
             if self.fsdp_auto_wrap_policy:
-                auto_wrap_policy = size_based_auto_wrap_policy(min_num_params=100000)
+                auto_wrap_policy = transformer_auto_wrap_policy(transformer_layer_cls={nn.TransformerEncoderLayer, nn.TransformerDecoderLayer})
                 with enable_wrap(wrapper_cls=FSDP, **fsdp_config):
                     wrapped_model = wrap(self.model, auto_wrap_policy=auto_wrap_policy)
             else:
@@ -170,10 +184,13 @@ class TrainingManager:
             if self.parallel_strategy == ParallelStrategy.FSDP:
                 if self.use_enhanced_fsdp:
                     # Enhanced FSDP checkpointing
-                    full_state_dict = FSDP.full_state_dict(self.model)
+                    save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+                    with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
+                        state_dict = self.model.state_dict()
+                    
                     torch.save({
                         'epoch': epoch,
-                        'model_state_dict': full_state_dict,
+                        'model_state_dict': state_dict,
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': loss,
                     }, path)
@@ -204,7 +221,9 @@ class TrainingManager:
             if self.use_enhanced_fsdp:
                 # Enhanced FSDP checkpoint loading
                 checkpoint = torch.load(path, map_location=self.device)
-                FSDP.load_state_dict(self.model, checkpoint['model_state_dict'])
+                load_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+                with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, load_policy):
+                    self.model.load_state_dict(checkpoint['model_state_dict'])
                 if optimizer:
                     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 return checkpoint['epoch'], checkpoint['loss']
@@ -468,6 +487,8 @@ class TrainingManager:
                 "cpu_offload": self.fsdp_cpu_offload,
                 "sharding_strategy": self.fsdp_sharding_strategy,
                 "backward_prefetch": self.fsdp_backward_prefetch is not None,
+                "forward_prefetch": self.fsdp_forward_prefetch,
+                "mixed_precision": self.fsdp_mixed_precision,
             }
         
         return {
