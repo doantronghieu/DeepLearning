@@ -4,6 +4,7 @@ import time
 from packaging import version as LooseVersion
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset
@@ -49,6 +50,15 @@ class TrainingManager:
         rank: int = 0,
         backend: str = 'nccl',
         parallel_strategy: str = ParallelStrategy.DATA_PARALLEL,
+        enable_amp=False,
+        amp_dtype: torch.dtype = torch.float16,
+        enable_gradient_clipping: bool = False,
+        gradient_clipping_threshold: float = 1.0,
+        enable_gradient_accumulation: bool = False,
+        gradient_accumulation_steps: int = 1,
+        enable_gradient_penalty: bool = False,
+        gradient_penalty_lambda: float = 10.0,
+        
         split_size: int = 20,
         enable_checkpointing: bool = True,
         enable_ddp: bool = False,
@@ -82,6 +92,16 @@ class TrainingManager:
         self.split_size: int = split_size
         self.device: torch.device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
         self.enable_checkpointing: bool = enable_checkpointing
+        
+        self.enable_amp = enable_amp
+        self.scaler = GradScaler(enabled=self.enable_amp)
+        self.amp_dtype = amp_dtype
+        self.enable_gradient_clipping = enable_gradient_clipping
+        self.gradient_clipping_threshold = gradient_clipping_threshold
+        self.enable_gradient_accumulation = enable_gradient_accumulation
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.enable_gradient_penalty = enable_gradient_penalty
+        self.gradient_penalty_lambda = gradient_penalty_lambda
         
         self.enable_ddp: bool = enable_ddp
         self.enable_join: bool = enable_join
@@ -314,6 +334,8 @@ class TrainingManager:
                     'enable_ddp_optimizer': self.enable_ddp_optimizer,
                     'enable_fsdp': self.enable_fsdp,
                     'fsdp_cpu_offload': self.fsdp_cpu_offload,
+                    'enable_amp': self.enable_amp,
+                    'scaler_state_dict': self.scaler.state_dict(),
                 }
                 torch.save(checkpoint, path)
             print(f"Checkpoint saved to {path}")
@@ -358,6 +380,9 @@ class TrainingManager:
         
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        if checkpoint.get('enable_amp', False) and self.enable_amp:
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
         
         # Restore DDPOptimizer state
         self.enable_ddp_optimizer = checkpoint.get('enable_ddp_optimizer', False)
@@ -405,7 +430,9 @@ class TrainingManager:
             param.grad.data /= size
 
     def train(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
-        if self.use_tensor_parallel:
+        if self.enable_amp:
+            self.train_amp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.use_tensor_parallel:
             self.train_tensor_parallel(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         elif self.parallel_strategy == ParallelStrategy.HSDP and self.use_device_mesh:
             self.train_hsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
@@ -417,6 +444,81 @@ class TrainingManager:
             self.train_with_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         else:
             self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+
+    def train_amp(self, dataset, num_epochs, optimizer, criterion, checkpoint_path=None):
+        train_set = self.partition_dataset(dataset)
+        
+        start_epoch = 0
+        if checkpoint_path and os.path.exists(checkpoint_path) and self.enable_checkpointing:
+            start_epoch, _ = self.load_checkpoint(checkpoint_path, optimizer)
+            start_epoch += 1
+        
+        for epoch in range(start_epoch, num_epochs):
+            epoch_loss, num_samples = self._train_epoch_amp(train_set, optimizer, criterion)
+            
+            avg_loss = epoch_loss / num_samples
+            print(f'Rank {self.rank}, epoch {epoch}: {avg_loss}')
+            
+            if self.enable_checkpointing:
+                self.save_checkpoint(epoch, optimizer, avg_loss, f"{checkpoint_path}_epoch_{epoch}")
+
+    def _train_epoch_amp(self, train_set, optimizer, criterion):
+        epoch_loss = 0.0
+        num_samples = 0
+
+        for i, (data, target) in enumerate(train_set):
+            data, target = data.to(self.device), target.to(self.device)
+            
+            if self.enable_gradient_accumulation and i % self.gradient_accumulation_steps == 0:
+                optimizer.zero_grad()
+            
+            with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.enable_amp):
+                output = self.model(data)
+                loss = criterion(output, target)
+                
+                if self.enable_gradient_penalty:
+                    gradient_penalty = self.calculate_gradient_penalty(data, output)
+                    loss += self.gradient_penalty_lambda * gradient_penalty
+            
+            self.scaler.scale(loss).backward()
+            
+            if self.enable_gradient_accumulation and (i + 1) % self.gradient_accumulation_steps == 0:
+                if self.enable_gradient_clipping:
+                    self.clip_gradients(optimizer)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            elif not self.enable_gradient_accumulation:
+                if self.enable_gradient_clipping:
+                    self.clip_gradients(optimizer)
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            
+            epoch_loss += loss.item()
+            num_samples += len(data)
+
+        return epoch_loss, num_samples
+
+    def clip_gradients(self, optimizer):
+        self.scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clipping_threshold)
+
+    def calculate_gradient_penalty(self, real_data, fake_data):
+        batch_size = real_data.size(0)
+        alpha = torch.rand(batch_size, 1, 1, 1).to(self.device)
+        interpolates = alpha * real_data + (1 - alpha) * fake_data
+        interpolates.requires_grad_(True)
+        
+        with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.enable_amp):
+            disc_interpolates = self.model(interpolates)
+        
+        gradients = torch.autograd.grad(
+            outputs=disc_interpolates, inputs=interpolates,
+            grad_outputs=torch.ones(disc_interpolates.size()).to(self.device),
+            create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+        
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        return gradient_penalty
 
     def train_hsdp(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
         train_set: DataLoader = self.partition_dataset(dataset)
@@ -751,6 +853,15 @@ class TrainingManager:
             "use_tensor_parallel": self.use_tensor_parallel,
             "zero_logging_data": zero_logging_data,
             "enable_zero": self.enable_zero,
+            "amp_enabled": self.enable_amp,
+            "amp_dtype": str(self.amp_dtype),
+            "amp_scale": self.scaler.get_scale() if self.enable_amp else None,
+            "gradient_clipping_enabled": self.enable_gradient_clipping,
+            "gradient_clipping_threshold": self.gradient_clipping_threshold if self.enable_gradient_clipping else None,
+            "gradient_accumulation_enabled": self.enable_gradient_accumulation,
+            "gradient_accumulation_steps": self.gradient_accumulation_steps if self.enable_gradient_accumulation else None,
+            "gradient_penalty_enabled": self.enable_gradient_penalty,
+            "gradient_penalty_lambda": self.gradient_penalty_lambda if self.enable_gradient_penalty else None,
         }
 
 class DataPartitioner:
