@@ -25,6 +25,7 @@ from torch.distributed.fsdp.wrap import (
     enable_wrap,
     wrap,
 )
+from torch.distributed.device_mesh import init_device_mesh
 from packaging import version as LooseVersion
 
 class ParallelStrategy:
@@ -34,6 +35,7 @@ class ParallelStrategy:
     DDP: str = "ddp"
     TORCH_DATA_PARALLEL: str = "torch_data_parallel" 
     FSDP: str = "fsdp"
+    HSDP: str = "hsdp"
 
 class TrainingManager:
     def __init__(
@@ -61,6 +63,7 @@ class TrainingManager:
         fsdp_mixed_precision: bool = False,
         fsdp_forward_prefetch: bool = False,
         fsdp_state_dict_type: str = "full",
+        use_device_mesh: bool = False,
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -89,6 +92,12 @@ class TrainingManager:
         self.fsdp_forward_prefetch = fsdp_forward_prefetch
         self.fsdp_backward_prefetch = fsdp_backward_prefetch
         self.fsdp_state_dict_type = fsdp_state_dict_type
+        
+        self.use_device_mesh = use_device_mesh
+        self.device_mesh = None
+        
+        if self.use_device_mesh:
+            self.setup_device_mesh()
         
         if self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp:
             self.setup_distributed()
@@ -127,12 +136,46 @@ class TrainingManager:
         if self.world_size > 1 and not (self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp):
             self.setup_distributed()
     
+    def setup_device_mesh(self) -> None:
+        if self.parallel_strategy in [ParallelStrategy.DDP, ParallelStrategy.FSDP, ParallelStrategy.HSDP]:
+            self.device_mesh = init_device_mesh("cuda", (self.world_size,))
+        elif self.parallel_strategy == ParallelStrategy.MODEL_PARALLEL:
+            self.device_mesh = init_device_mesh("cuda", (self.world_size,))
+        elif self.parallel_strategy == ParallelStrategy.PIPELINE_PARALLEL:
+            self.device_mesh = init_device_mesh("cuda", (self.world_size,))
+
     def setup_ddp_optimizer(self):
         # Initialize TorchDynamo DDPOptimizer
         torch._dynamo.config.optimize_ddp = True
         torch._dynamo.config.log_level = "INFO"  # Set to "DEBUG" for more detailed logs
         self.model = torch.compile(self.model)
 
+    def setup_ddp_with_device_mesh(self) -> None:
+        if not self.use_device_mesh:
+            return
+        
+        self.model = self.model.to(self.device)
+        self.model = DDP(
+            self.model,
+            device_ids=[self.rank],
+            process_group=self.device_mesh.get_group(),
+            gradient_as_bucket_view=self.gradient_as_bucket_view,
+            static_graph=self.static_graph,
+            delay_all_reduce_named_params=self.delay_all_reduce_named_params,
+            param_to_hook_all_reduce=self.param_to_hook_all_reduce,
+        )
+
+    def setup_hsdp(self) -> None:
+        if not self.use_device_mesh:
+            return
+        
+        mesh_2d = init_device_mesh("cuda", (2, self.world_size // 2), mesh_dim_names=("replicate", "shard"))
+        self.model = FSDP(
+            self.model,
+            device_mesh=mesh_2d,
+            sharding_strategy=ShardingStrategy.HYBRID_SHARD
+        )
+    
     def register_ddp_comm_hook(self):
         def ddp_comm_hook(state: object, bucket: dist.GradBucket) -> torch.futures.Future[torch.Tensor]:
             fut = torch.distributed.all_reduce(bucket.buffer()).get_future()
@@ -142,12 +185,21 @@ class TrainingManager:
 
     def wrap_fsdp_model(self) -> nn.Module:
         if self.use_enhanced_fsdp:
-            fsdp_config = {
-                "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
-                "sharding_strategy": getattr(ShardingStrategy, self.fsdp_sharding_strategy),
-                "forward_prefetch": self.fsdp_forward_prefetch,
-                "backward_prefetch": self.fsdp_backward_prefetch,
-            }
+            if self.use_device_mesh:
+                fsdp_config = {
+                    "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
+                    "sharding_strategy": getattr(ShardingStrategy, self.fsdp_sharding_strategy),
+                    "forward_prefetch": self.fsdp_forward_prefetch,
+                    "backward_prefetch": self.fsdp_backward_prefetch,
+                    "device_mesh": self.device_mesh,
+                }
+            else:
+                fsdp_config = {
+                    "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
+                    "sharding_strategy": getattr(ShardingStrategy, self.fsdp_sharding_strategy),
+                    "forward_prefetch": self.fsdp_forward_prefetch,
+                    "backward_prefetch": self.fsdp_backward_prefetch,
+                }
             
             if self.fsdp_mixed_precision:
                 fsdp_config["mixed_precision"] = MixedPrecision(
@@ -292,12 +344,49 @@ class TrainingManager:
             param.grad.data /= size
 
     def train(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
-        if self.parallel_strategy == ParallelStrategy.FSDP:
+        if self.parallel_strategy == ParallelStrategy.HSDP and self.use_device_mesh:
+            self.train_hsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.parallel_strategy == ParallelStrategy.FSDP:
             self.train_fsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         elif self.enable_join:
             self.train_with_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         else:
             self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+
+    def train_hsdp(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
+        train_set: DataLoader = self.partition_dataset(dataset)
+        
+        start_epoch = 0
+        if checkpoint_path and os.path.exists(checkpoint_path) and self.enable_checkpointing:
+            start_epoch, _ = self.load_checkpoint(checkpoint_path, optimizer)
+            start_epoch += 1  # Start from the next epoch
+        
+        for epoch in range(start_epoch, num_epochs):
+            epoch_loss, num_samples = self._train_epoch_hsdp(train_set, optimizer, criterion)
+            
+            avg_loss = epoch_loss / num_samples
+            print(f'Rank {self.rank}, epoch {epoch}: {avg_loss}')
+            
+            if self.enable_checkpointing:
+                self.save_checkpoint(epoch, optimizer, avg_loss, f"{checkpoint_path}_epoch_{epoch}")
+
+    def _train_epoch_hsdp(self, train_set: DataLoader, optimizer: torch.optim.Optimizer, criterion: nn.Module) -> Tuple[float, int]:
+        epoch_loss: float = 0.0
+        num_samples: int = 0
+
+        for data, target in train_set:
+            data, target = data.to(self.device), target.to(self.device)
+            
+            optimizer.zero_grad()
+            output = self.model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            num_samples += len(data)
+
+        return epoch_loss, num_samples
 
     def _train_epoch(self, train_set: DataLoader, optimizer: torch.optim.Optimizer, criterion: nn.Module) -> Tuple[float, int]:
         epoch_loss: float = 0.0
@@ -479,6 +568,13 @@ class TrainingManager:
         total_samples = len(dataset) * num_epochs
         throughput = total_samples / (end_time - start_time)
         
+        device_mesh_logging_data = {}
+        if self.use_device_mesh:
+            device_mesh_logging_data = {
+                "mesh_shape": self.device_mesh.mesh.shape if self.device_mesh else None,
+                "mesh_dim_names": self.device_mesh.mesh_dim_names if self.device_mesh else None,
+            }
+        
         fsdp_logging_data = {}
         if isinstance(self.model, FSDP):
             fsdp_logging_data = {
@@ -497,8 +593,10 @@ class TrainingManager:
             "total_time": end_time - start_time,
             "gpu_memory_usage": torch.cuda.max_memory_allocated(self.device) / 1e9,  # in GB
             "fsdp_logging_data": fsdp_logging_data,
+            "device_mesh_logging_data": device_mesh_logging_data,
             "fsdp_enabled": self.enable_fsdp,
             "enhanced_fsdp": self.use_enhanced_fsdp,
+            "use_device_mesh": self.use_device_mesh,
         }
 
 class DataPartitioner:
