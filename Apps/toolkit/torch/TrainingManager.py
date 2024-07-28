@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset
+from torch.nn.parallel import DistributedDataParallel as DDP
 from typing import List, Tuple, Optional, Dict, Any, Callable
 from torch.distributed.algorithms.join import Join
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -206,7 +206,7 @@ class TrainingManager:
             device_mesh=mesh_2d,
             sharding_strategy=ShardingStrategy.HYBRID_SHARD
         )
-    
+
     def register_ddp_comm_hook(self):
         def ddp_comm_hook(state: object, bucket: dist.GradBucket) -> torch.futures.Future[torch.Tensor]:
             fut = torch.distributed.all_reduce(bucket.buffer()).get_future()
@@ -295,7 +295,7 @@ class TrainingManager:
                 }
                 torch.save(checkpoint, path)
             print(f"Checkpoint saved to {path}")
-            
+        
     def load_checkpoint(self, path: str, optimizer: Optional[torch.optim.Optimizer] = None) -> Tuple[int, float]:
         if not self.enable_checkpointing:
             return 0, 0.0

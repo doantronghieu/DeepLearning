@@ -86,7 +86,7 @@ CODED
 
 ### [Tensor Parallelism](https://pytorch.org/docs/stable/distributed.tensor.parallel.html)
 
-!!!
+CODED
 
 ## Custom Extensions
 
