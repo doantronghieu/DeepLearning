@@ -50,7 +50,11 @@ CODED
 
 ### [Introducing PyTorch Fully Sharded Data Parallel (FSDP) API](https://pytorch.org/blog/introducing-pytorch-fully-sharded-data-parallel-api/)
 
+CODED
+
 ### [Getting Started with Fully Sharded Data Parallel(FSDP)](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html)
+
+CODED
 
 ### [Advanced Model Training with Fully Sharded Data Parallel (FSDP)](https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html)
 
