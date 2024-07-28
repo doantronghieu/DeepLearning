@@ -1,5 +1,7 @@
 # My code starts from here
 import os
+import time
+from packaging import version as LooseVersion
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -11,29 +13,20 @@ from torch.distributed.algorithms.join import Join
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import CPUOffload, BackwardPrefetch
 from torch.distributed.fsdp.wrap import enable_wrap, wrap, size_based_auto_wrap_policy
-import time
 from torch.distributed.fsdp import (
-    FullyShardedDataParallel as FSDP,
-    MixedPrecision,
-    BackwardPrefetch,
-    ShardingStrategy,
-    FullStateDictConfig,
-    StateDictType,
+    FullyShardedDataParallel as FSDP, MixedPrecision, BackwardPrefetch, 
+    ShardingStrategy, FullStateDictConfig, StateDictType,
 )
 from torch.distributed.fsdp.wrap import (
-    transformer_auto_wrap_policy,
-    enable_wrap,
-    wrap,
+    transformer_auto_wrap_policy, enable_wrap, wrap,
 )
 from torch.distributed.device_mesh import init_device_mesh
 import torch.distributed.tensor.parallel as tp
 from torch.distributed.tensor.parallel import (
-    parallelize_module,
-    ColwiseParallel,
-    RowwiseParallel,
-    SequenceParallel,
+    parallelize_module, ColwiseParallel, RowwiseParallel, SequenceParallel,
 )
-from packaging import version as LooseVersion
+from torch.distributed.optim import ZeroRedundancyOptimizer
+
 
 class ParallelStrategy:
     DATA_PARALLEL: str = "data_parallel"
@@ -46,7 +39,8 @@ class ParallelStrategy:
     TP_COLWISE: str = "tp_colwise"
     TP_ROWWISE: str = "tp_rowwise"
     TP_SEQUENCE: str = "tp_sequence"
-
+    ZERO: str = "zero"
+    
 class TrainingManager:
     def __init__(
         self,
@@ -76,6 +70,9 @@ class TrainingManager:
         use_device_mesh: bool = False,
         use_tensor_parallel: bool = False,
         tp_mesh_shape: Tuple[int, ...] = (1,),
+        enable_zero: bool = False,  
+        zero_optimizer_class: torch.optim.Optimizer = torch.optim.Adam,  
+        zero_overlap_comm: bool = True,
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -111,12 +108,21 @@ class TrainingManager:
         self.use_tensor_parallel = use_tensor_parallel
         self.tp_mesh_shape = tp_mesh_shape
         
+        self.enable_zero = enable_zero
+        self.zero_optimizer_class = zero_optimizer_class
+        self.zero_overlap_comm = zero_overlap_comm
+        
         if self.use_device_mesh:
             self.setup_device_mesh()
         
         if self.use_tensor_parallel:
             self.setup_tensor_parallel()
         
+        if self.parallel_strategy == ParallelStrategy.ZERO and self.enable_zero:
+            self.setup_distributed()
+            self.model = self.model.to(self.device)
+            self.setup_zero_redundancy_optimizer()
+
         if self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp:
             self.setup_distributed()
             self.model = self.model.to(self.device)
@@ -174,6 +180,14 @@ class TrainingManager:
             self.model = parallelize_module(self.model, tp_mesh, RowwiseParallel())
         elif self.parallel_strategy == ParallelStrategy.TP_SEQUENCE:
             self.model = parallelize_module(self.model, tp_mesh, SequenceParallel())
+    
+    def setup_zero_redundancy_optimizer(self) -> None:
+        self.optimizer = ZeroRedundancyOptimizer(
+            self.model.parameters(),
+            optimizer_class=self.zero_optimizer_class,
+            overlap_comm=self.zero_overlap_comm,
+            lr=0.01  # You might want to make this configurable
+        )
     
     def setup_ddp_optimizer(self):
         # Initialize TorchDynamo DDPOptimizer
@@ -280,6 +294,14 @@ class TrainingManager:
                 else:
                     # Original FSDP checkpointing
                     FSDP.save_model_checkpoint(self.model, path)
+            elif self.parallel_strategy == ParallelStrategy.ZERO:
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss,
+                }
+                torch.save(checkpoint, path)
             else:
                 checkpoint = {
                     'epoch': epoch,
@@ -314,6 +336,14 @@ class TrainingManager:
                 # Original FSDP checkpoint loading
                 FSDP.load_model_checkpoint(self.model, path)
                 return 0, 0.0  # Return default values for now
+        elif self.parallel_strategy == ParallelStrategy.ZERO:
+            map_location = {'cuda:%d' % 0: 'cuda:%d' % self.rank}
+            checkpoint = torch.load(path, map_location=map_location)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            if optimizer:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            print(f"Checkpoint loaded from {path}")
+            return checkpoint['epoch'], checkpoint['loss']
         
         map_location = {'cuda:%d' % 0: 'cuda:%d' % self.rank}
         checkpoint = torch.load(path, map_location=map_location)
@@ -377,15 +407,16 @@ class TrainingManager:
     def train(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
         if self.use_tensor_parallel:
             self.train_tensor_parallel(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.parallel_strategy == ParallelStrategy.HSDP and self.use_device_mesh:
+            self.train_hsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.parallel_strategy == ParallelStrategy.FSDP:
+            self.train_fsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.parallel_strategy == ParallelStrategy.ZERO:
+            self.train_zero(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.enable_join:
+            self.train_with_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         else:
-            if self.parallel_strategy == ParallelStrategy.HSDP and self.use_device_mesh:
-                self.train_hsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
-            elif self.parallel_strategy == ParallelStrategy.FSDP:
-                self.train_fsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
-            elif self.enable_join:
-                self.train_with_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
-            else:
-                self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+            self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
 
     def train_hsdp(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
         train_set: DataLoader = self.partition_dataset(dataset)
@@ -618,6 +649,41 @@ class TrainingManager:
 
         return epoch_loss, num_samples
 
+    def train_zero(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
+        train_set: DataLoader = self.partition_dataset(dataset)
+        
+        start_epoch = 0
+        if checkpoint_path and os.path.exists(checkpoint_path) and self.enable_checkpointing:
+            start_epoch, _ = self.load_checkpoint(checkpoint_path, optimizer)
+            start_epoch += 1
+        
+        for epoch in range(start_epoch, num_epochs):
+            epoch_loss, num_samples = self._train_epoch_zero(train_set, optimizer, criterion)
+            
+            avg_loss = epoch_loss / num_samples
+            print(f'Rank {self.rank}, epoch {epoch}: {avg_loss}')
+            
+            if self.enable_checkpointing:
+                self.save_checkpoint(epoch, optimizer, avg_loss, f"{checkpoint_path}_epoch_{epoch}")
+
+    def _train_epoch_zero(self, train_set: DataLoader, optimizer: torch.optim.Optimizer, criterion: nn.Module) -> Tuple[float, int]:
+        epoch_loss: float = 0.0
+        num_samples: int = 0
+
+        for data, target in train_set:
+            data, target = data.to(self.device), target.to(self.device)
+            
+            optimizer.zero_grad()
+            output = self.model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            num_samples += len(data)
+
+        return epoch_loss, num_samples
+    
     @staticmethod
     def init_process(rank: int, size: int, fn: callable, backend: str = 'gloo') -> None:
         os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -662,7 +728,15 @@ class TrainingManager:
                 "tp_strategy": self.parallel_strategy,
                 "tp_mesh_shape": self.tp_mesh_shape,
             }
-       
+
+        zero_logging_data = {}
+        if self.parallel_strategy == ParallelStrategy.ZERO:
+            zero_logging_data = {
+                "optimizer_class": self.zero_optimizer_class.__name__,
+                "overlap_comm": self.zero_overlap_comm,
+                "sharded_optimizer_memory": sum(p.numel() for group in optimizer.param_groups for p in group['params']) * 4 / 1e9,  # in GB
+            }
+        
         return {
             "strategy": self.parallel_strategy,
             "throughput": throughput,
@@ -675,6 +749,8 @@ class TrainingManager:
             "use_device_mesh": self.use_device_mesh,
             "tensor_parallel_data": tp_logging_data,
             "use_tensor_parallel": self.use_tensor_parallel,
+            "zero_logging_data": zero_logging_data,
+            "enable_zero": self.enable_zero,
         }
 
 class DataPartitioner:

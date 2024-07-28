@@ -92,6 +92,8 @@ CODED
 
 ### [Distributed Optimizers](https://pytorch.org/docs/stable/distributed.optim.html#torch.distributed.optim.ZeroRedundancyOptimizer)
 
+CODED
+
 ### [Distributed RPC Framework](https://pytorch.org/docs/stable/rpc.html)
 
 ### [Customize Process Group Backends Using Cpp Extensions](https://pytorch.org/tutorials/intermediate/process_group_cpp_extension_tutorial.html)
@@ -118,7 +120,11 @@ CODED
 
 ### [Introduction to Distributed Pipeline Parallelism](https://pytorch.org/tutorials/intermediate/pipelining_tutorial.html)
 
+xxx
+
 ## [Shard Optimizer States with ZeroRedundancyOptimizer](https://pytorch.org/tutorials/recipes/zero_redundancy_optimizer.html)
+
+CODED
 
 ## [Distributed Optimizer with TorchScript support](https://pytorch.org/tutorials/recipes/distributed_optim_torchscript.html)
 
