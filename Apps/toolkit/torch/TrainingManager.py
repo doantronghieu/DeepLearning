@@ -12,6 +12,20 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import CPUOffload, BackwardPrefetch
 from torch.distributed.fsdp.wrap import enable_wrap, wrap, size_based_auto_wrap_policy
 import time
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel as FSDP,
+    MixedPrecision,
+    BackwardPrefetch,
+    ShardingStrategy,
+    FullStateDictConfig,
+    StateDictType,
+)
+from torch.distributed.fsdp.wrap import (
+    transformer_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
+from packaging import version as LooseVersion
 
 class ParallelStrategy:
     DATA_PARALLEL: str = "data_parallel"
@@ -66,7 +80,6 @@ class TrainingManager:
         self.enable_fsdp = enable_fsdp
         self.fsdp_cpu_offload = fsdp_cpu_offload
         self.fsdp_auto_wrap_policy = fsdp_auto_wrap_policy
-        
         self.fsdp_backward_prefetch = fsdp_backward_prefetch
         self.fsdp_sharding_strategy = fsdp_sharding_strategy
         self.use_enhanced_fsdp = use_enhanced_fsdp
@@ -123,8 +136,6 @@ class TrainingManager:
 
     def wrap_fsdp_model(self) -> nn.Module:
         if self.use_enhanced_fsdp:
-            from torch.distributed.fsdp.fully_sharded_data_parallel import ShardingStrategy
-            
             fsdp_config = {
                 "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
                 "backward_prefetch": self.fsdp_backward_prefetch,
@@ -384,6 +395,16 @@ class TrainingManager:
         
         optimizer.step()
         return total_loss
+    
+    def check_bf16_support(self) -> bool:
+        bf16_ready = (
+            torch.version.cuda
+            and torch.cuda.is_bf16_supported()
+            and LooseVersion(torch.version.cuda) >= "11.0"
+            and dist.is_nccl_available()
+            and LooseVersion(torch.distributed.nccl.version()) >= (2, 10)
+        )
+        return bf16_ready
     
     def train_fsdp(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
         train_set: DataLoader = self.partition_dataset(dataset)
