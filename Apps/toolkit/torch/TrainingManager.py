@@ -28,7 +28,11 @@ class TrainingManager:
         split_size: int = 20,
         enable_checkpointing: bool = True,
         enable_ddp: bool = False,
-        enable_join: bool = False
+        enable_join: bool = False,
+        gradient_as_bucket_view: bool = False,
+        static_graph: bool = False,
+        delay_all_reduce_named_params: Optional[List[Tuple[str, nn.Parameter]]] = None,
+        param_to_hook_all_reduce: Optional[nn.Parameter] = None,
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -41,6 +45,24 @@ class TrainingManager:
         self.enable_ddp: bool = enable_ddp
         self.enable_join: bool = enable_join
         
+        self.gradient_as_bucket_view = gradient_as_bucket_view
+        self.static_graph = static_graph
+        self.delay_all_reduce_named_params = delay_all_reduce_named_params
+        self.param_to_hook_all_reduce = param_to_hook_all_reduce
+
+        if self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp:
+            self.setup_distributed()
+            self.model = self.model.to(self.device)
+            self.model = DDP(
+                self.model,
+                device_ids=[self.rank],
+                gradient_as_bucket_view=self.gradient_as_bucket_view,
+                static_graph=self.static_graph,
+                delay_all_reduce_named_params=self.delay_all_reduce_named_params,
+                param_to_hook_all_reduce=self.param_to_hook_all_reduce,
+            )
+            self.register_ddp_comm_hook()
+            
         if self.parallel_strategy == ParallelStrategy.MODEL_PARALLEL:
             self.model = ModelParallelModule(self.model, self.world_size)
         elif self.parallel_strategy == ParallelStrategy.PIPELINE_PARALLEL:
@@ -56,6 +78,13 @@ class TrainingManager:
         
         if self.world_size > 1 and not (self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp):
             self.setup_distributed()
+
+    def register_ddp_comm_hook(self):
+        def ddp_comm_hook(state: object, bucket: dist.GradBucket) -> torch.futures.Future[torch.Tensor]:
+            fut = torch.distributed.all_reduce(bucket.buffer()).get_future()
+            return fut
+
+        self.model.register_comm_hook(state=None, hook=ddp_comm_hook)
 
     def save_checkpoint(self, epoch: int, optimizer: torch.optim.Optimizer, loss: float, path: str) -> None:
         if not self.enable_checkpointing:
@@ -132,6 +161,23 @@ class TrainingManager:
         else:
             self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
 
+    def _train_epoch(self, train_set: DataLoader, optimizer: torch.optim.Optimizer, criterion: nn.Module) -> Tuple[float, int]:
+        epoch_loss: float = 0.0
+        num_samples: int = 0
+
+        for i, (data, target) in enumerate(train_set):
+            if i % 100 == 0 and isinstance(self.model, DDP):
+                # Use no_sync every 100 iterations to accumulate gradients locally
+                with self.model.no_sync():
+                    loss = self.train_step(data, target, optimizer, criterion)
+            else:
+                loss = self.train_step(data, target, optimizer, criterion)
+            
+            epoch_loss += loss
+            num_samples += len(data)
+
+        return epoch_loss, num_samples
+
     def train_without_join(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
         train_set: DataLoader = self.partition_dataset(dataset)
         
@@ -141,15 +187,9 @@ class TrainingManager:
             start_epoch += 1  # Start from the next epoch
         
         for epoch in range(start_epoch, num_epochs):
-            epoch_loss: float = 0.0
-            for data, target in train_set:
-                if self.parallel_strategy == ParallelStrategy.PIPELINE_PARALLEL:
-                    loss: float = self.train_pipeline_parallel(data, target, optimizer, criterion)
-                else:
-                    loss: float = self.train_step(data, target, optimizer, criterion)
-                epoch_loss += loss
+            epoch_loss, num_samples = self._train_epoch(train_set, optimizer, criterion)
             
-            avg_loss = epoch_loss / len(train_set)
+            avg_loss = epoch_loss / num_samples
             print(f'Rank {self.rank}, epoch {epoch}: {avg_loss}')
             
             if self.enable_checkpointing:
@@ -167,14 +207,8 @@ class TrainingManager:
             start_epoch += 1  # Start from the next epoch
         
         for epoch in range(start_epoch, num_epochs):
-            epoch_loss: float = 0.0
-            num_samples: int = 0
-            
             with Join([self.model]):
-                for data, target in train_set:
-                    loss: float = self.train_step(data, target, optimizer, criterion)
-                    epoch_loss += loss
-                    num_samples += len(data)
+                epoch_loss, num_samples = self._train_epoch(train_set, optimizer, criterion)
             
             # Synchronize loss and num_samples across all ranks
             epoch_loss = torch.tensor([epoch_loss], device=self.device)
@@ -262,13 +296,15 @@ class TrainingManager:
         total_samples = len(dataset) * num_epochs
         throughput = total_samples / (end_time - start_time)
         
+        ddp_logging_data = self.model._get_ddp_logging_data() if isinstance(self.model, DDP) else {}
+        
         return {
             "strategy": self.parallel_strategy,
             "throughput": throughput,
             "total_time": end_time - start_time,
-            "gpu_memory_usage": torch.cuda.max_memory_allocated(self.device) / 1e9  # in GB
+            "gpu_memory_usage": torch.cuda.max_memory_allocated(self.device) / 1e9,  # in GB
+            "ddp_logging_data": ddp_logging_data,
         }
-    
 class DataPartitioner:
     def __init__(self, data: Dataset, sizes: List[float]) -> None:
         self.data: Dataset = data

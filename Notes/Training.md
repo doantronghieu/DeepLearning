@@ -36,6 +36,8 @@ CODED
 
 ### [Data Parallelism](https://pytorch.org/tutorials/beginner/blitz/data_parallel_tutorial.html)
 
+CODED
+
 ### [DistributedDataParallel](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)
 
 ### [DistributedDataParallel Notes](https://pytorch.org/docs/master/notes/ddp.html)
