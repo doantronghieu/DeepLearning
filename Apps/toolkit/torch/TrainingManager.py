@@ -617,7 +617,7 @@ class TrainingManager:
             num_samples += len(data)
 
         return epoch_loss, num_samples
-    
+
     @staticmethod
     def init_process(rank: int, size: int, fn: callable, backend: str = 'gloo') -> None:
         os.environ['MASTER_ADDR'] = '127.0.0.1'

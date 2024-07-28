@@ -80,11 +80,13 @@ CODED
 
 ### [torch.distributed.tensor.parallel](https://pytorch.org/docs/stable/distributed.tensor.parallel.html)
 
-!!!
+CODED
 
 ### [Large Scale Transformer model training with Tensor Parallel (TP)](https://pytorch.org/tutorials/intermediate/TP_tutorial.html)
 
 ### [Tensor Parallelism](https://pytorch.org/docs/stable/distributed.tensor.parallel.html)
+
+!!!
 
 ## Custom Extensions
 
