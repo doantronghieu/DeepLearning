@@ -33,6 +33,7 @@ class TrainingManager:
         static_graph: bool = False,
         delay_all_reduce_named_params: Optional[List[Tuple[str, nn.Parameter]]] = None,
         param_to_hook_all_reduce: Optional[nn.Parameter] = None,
+        enable_ddp_optimizer: bool = False,  
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -44,6 +45,7 @@ class TrainingManager:
         self.enable_checkpointing: bool = enable_checkpointing
         self.enable_ddp: bool = enable_ddp
         self.enable_join: bool = enable_join
+        self.enable_ddp_optimizer: bool = enable_ddp_optimizer
         
         self.gradient_as_bucket_view = gradient_as_bucket_view
         self.static_graph = static_graph
@@ -63,6 +65,9 @@ class TrainingManager:
             )
             self.register_ddp_comm_hook()
             
+            if self.enable_ddp_optimizer:
+                self.setup_ddp_optimizer()
+            
         if self.parallel_strategy == ParallelStrategy.MODEL_PARALLEL:
             self.model = ModelParallelModule(self.model, self.world_size)
         elif self.parallel_strategy == ParallelStrategy.PIPELINE_PARALLEL:
@@ -78,6 +83,12 @@ class TrainingManager:
         
         if self.world_size > 1 and not (self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp):
             self.setup_distributed()
+    
+    def setup_ddp_optimizer(self):
+        # Initialize TorchDynamo DDPOptimizer
+        torch._dynamo.config.optimize_ddp = True
+        torch._dynamo.config.log_level = "INFO"  # Set to "DEBUG" for more detailed logs
+        self.model = torch.compile(self.model)
 
     def register_ddp_comm_hook(self):
         def ddp_comm_hook(state: object, bucket: dist.GradBucket) -> torch.futures.Future[torch.Tensor]:
@@ -98,7 +109,8 @@ class TrainingManager:
                 'loss': loss,
                 'parallel_strategy': self.parallel_strategy,
                 'world_size': self.world_size,
-                'split_size': self.split_size
+                'split_size': self.split_size,
+                'enable_ddp_optimizer': self.enable_ddp_optimizer, 
             }
             torch.save(checkpoint, path)
             print(f"Checkpoint saved to {path}")
@@ -121,13 +133,24 @@ class TrainingManager:
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
+        # Restore DDPOptimizer state
+        self.enable_ddp_optimizer = checkpoint.get('enable_ddp_optimizer', False)
+        if self.enable_ddp_optimizer:
+            self.setup_ddp_optimizer()
+        
         print(f"Checkpoint loaded from {path}")
         return checkpoint['epoch'], checkpoint['loss']
 
     def export_model(self, path: str) -> None:
         """Export the trained model in TorchScript format."""
         if self.rank == 0:  # Only export from the main process
-            model_scripted = torch.jit.script(self.model)
+            # If using DDPOptimizer, we need to handle the compiled model differently
+            if self.enable_ddp_optimizer:
+                # Export the original model, not the compiled one
+                original_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
+                model_scripted = torch.jit.script(original_model)
+            else:
+                model_scripted = torch.jit.script(self.model)
             model_scripted.save(path)
             print(f"Model exported to {path}")
 
@@ -304,7 +327,9 @@ class TrainingManager:
             "total_time": end_time - start_time,
             "gpu_memory_usage": torch.cuda.max_memory_allocated(self.device) / 1e9,  # in GB
             "ddp_logging_data": ddp_logging_data,
+            "ddp_optimizer_enabled": self.enable_ddp_optimizer,
         }
+
 class DataPartitioner:
     def __init__(self, data: Dataset, sizes: List[float]) -> None:
         self.data: Dataset = data

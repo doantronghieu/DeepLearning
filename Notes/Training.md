@@ -40,6 +40,8 @@ CODED
 
 ### [DistributedDataParallel](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)
 
+CODED
+
 ### [DistributedDataParallel Notes](https://pytorch.org/docs/master/notes/ddp.html)
 
 ## Fully Sharded Data Parallel (FSDP)
