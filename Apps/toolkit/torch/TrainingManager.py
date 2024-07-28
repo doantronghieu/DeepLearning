@@ -6,8 +6,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Callable
 from torch.distributed.algorithms.join import Join
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import CPUOffload
+from torch.distributed.fsdp.wrap import enable_wrap, wrap, default_auto_wrap_policy
 import time
 
 class ParallelStrategy:
@@ -16,6 +19,7 @@ class ParallelStrategy:
     PIPELINE_PARALLEL: str = "pipeline_parallel"
     DDP: str = "ddp"
     TORCH_DATA_PARALLEL: str = "torch_data_parallel" 
+    FSDP: str = "fsdp"
 
 class TrainingManager:
     def __init__(
@@ -34,6 +38,9 @@ class TrainingManager:
         delay_all_reduce_named_params: Optional[List[Tuple[str, nn.Parameter]]] = None,
         param_to_hook_all_reduce: Optional[nn.Parameter] = None,
         enable_ddp_optimizer: bool = False,  
+        enable_fsdp: bool = False, 
+        fsdp_cpu_offload: bool = False,  
+        fsdp_auto_wrap_policy: Optional[Callable] = None, 
     ) -> None:
         self.model: nn.Module = model
         self.world_size: int = world_size
@@ -43,6 +50,7 @@ class TrainingManager:
         self.split_size: int = split_size
         self.device: torch.device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
         self.enable_checkpointing: bool = enable_checkpointing
+        
         self.enable_ddp: bool = enable_ddp
         self.enable_join: bool = enable_join
         self.enable_ddp_optimizer: bool = enable_ddp_optimizer
@@ -52,6 +60,10 @@ class TrainingManager:
         self.delay_all_reduce_named_params = delay_all_reduce_named_params
         self.param_to_hook_all_reduce = param_to_hook_all_reduce
 
+        self.enable_fsdp = enable_fsdp
+        self.fsdp_cpu_offload = fsdp_cpu_offload
+        self.fsdp_auto_wrap_policy = fsdp_auto_wrap_policy or default_auto_wrap_policy
+        
         if self.parallel_strategy == ParallelStrategy.DDP and self.enable_ddp:
             self.setup_distributed()
             self.model = self.model.to(self.device)
@@ -67,7 +79,12 @@ class TrainingManager:
             
             if self.enable_ddp_optimizer:
                 self.setup_ddp_optimizer()
-            
+        
+        if self.parallel_strategy == ParallelStrategy.FSDP and self.enable_fsdp:
+            self.setup_distributed()
+            self.model = self.model.to(self.device)
+            self.model = self.wrap_fsdp_model()
+        
         if self.parallel_strategy == ParallelStrategy.MODEL_PARALLEL:
             self.model = ModelParallelModule(self.model, self.world_size)
         elif self.parallel_strategy == ParallelStrategy.PIPELINE_PARALLEL:
@@ -97,27 +114,50 @@ class TrainingManager:
 
         self.model.register_comm_hook(state=None, hook=ddp_comm_hook)
 
+    def wrap_fsdp_model(self) -> nn.Module:
+        fsdp_config = {
+            "cpu_offload": CPUOffload(offload_params=self.fsdp_cpu_offload),
+        }
+        
+        if self.fsdp_auto_wrap_policy:
+            with enable_wrap(wrapper_cls=FSDP, **fsdp_config):
+                wrapped_model = wrap(self.model)
+        else:
+            wrapped_model = FSDP(self.model, **fsdp_config)
+        
+        return wrapped_model
+    
     def save_checkpoint(self, epoch: int, optimizer: torch.optim.Optimizer, loss: float, path: str) -> None:
         if not self.enable_checkpointing:
             return
         
         if self.rank == 0:  # Only save checkpoint on the main process
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-                'parallel_strategy': self.parallel_strategy,
-                'world_size': self.world_size,
-                'split_size': self.split_size,
-                'enable_ddp_optimizer': self.enable_ddp_optimizer, 
-            }
-            torch.save(checkpoint, path)
+            if self.parallel_strategy == ParallelStrategy.FSDP:
+                FSDP.save_model_checkpoint(self.model, path)
+            else:
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss,
+                    'parallel_strategy': self.parallel_strategy,
+                    'world_size': self.world_size,
+                    'split_size': self.split_size,
+                    'enable_ddp_optimizer': self.enable_ddp_optimizer,
+                    'enable_fsdp': self.enable_fsdp,
+                    'fsdp_cpu_offload': self.fsdp_cpu_offload,
+                }
+                torch.save(checkpoint, path)
             print(f"Checkpoint saved to {path}")
-
+            
     def load_checkpoint(self, path: str, optimizer: Optional[torch.optim.Optimizer] = None) -> Tuple[int, float]:
         if not self.enable_checkpointing:
             return 0, 0.0
+        
+        if self.parallel_strategy == ParallelStrategy.FSDP:
+            FSDP.load_model_checkpoint(self.model, path)
+            # Note: Optimizer state loading for FSDP requires additional handling
+            return 0, 0.0  # Return default values for now
         
         map_location = {'cuda:%d' % 0: 'cuda:%d' % self.rank}
         checkpoint = torch.load(path, map_location=map_location)
@@ -179,7 +219,9 @@ class TrainingManager:
             param.grad.data /= size
 
     def train(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
-        if self.enable_join:
+        if self.parallel_strategy == ParallelStrategy.FSDP:
+            self.train_fsdp(dataset, num_epochs, optimizer, criterion, checkpoint_path)
+        elif self.enable_join:
             self.train_with_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
         else:
             self.train_without_join(dataset, num_epochs, optimizer, criterion, checkpoint_path)
@@ -299,7 +341,43 @@ class TrainingManager:
         
         optimizer.step()
         return total_loss
+    
+    def train_fsdp(self, dataset: Dataset, num_epochs: int, optimizer: torch.optim.Optimizer, criterion: nn.Module, checkpoint_path: Optional[str] = None) -> None:
+        train_set: DataLoader = self.partition_dataset(dataset)
+        
+        start_epoch = 0
+        if checkpoint_path and os.path.exists(checkpoint_path) and self.enable_checkpointing:
+            start_epoch, _ = self.load_checkpoint(checkpoint_path, optimizer)
+            start_epoch += 1  # Start from the next epoch
+        
+        for epoch in range(start_epoch, num_epochs):
+            epoch_loss, num_samples = self._train_epoch_fsdp(train_set, optimizer, criterion)
+            
+            avg_loss = epoch_loss / num_samples
+            print(f'Rank {self.rank}, epoch {epoch}: {avg_loss}')
+            
+            if self.enable_checkpointing:
+                self.save_checkpoint(epoch, optimizer, avg_loss, f"{checkpoint_path}_epoch_{epoch}")
 
+    def _train_epoch_fsdp(self, train_set: DataLoader, optimizer: torch.optim.Optimizer, criterion: nn.Module) -> Tuple[float, int]:
+        epoch_loss: float = 0.0
+        num_samples: int = 0
+
+        for data, target in train_set:
+            data, target = data.to(self.device), target.to(self.device)
+            
+            optimizer.zero_grad()
+            output = self.model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            num_samples += len(data)
+
+        return epoch_loss, num_samples
+
+    
     @staticmethod
     def init_process(rank: int, size: int, fn: callable, backend: str = 'gloo') -> None:
         os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -319,15 +397,21 @@ class TrainingManager:
         total_samples = len(dataset) * num_epochs
         throughput = total_samples / (end_time - start_time)
         
-        ddp_logging_data = self.model._get_ddp_logging_data() if isinstance(self.model, DDP) else {}
+        fsdp_logging_data = {}
+        if isinstance(self.model, FSDP):
+            fsdp_logging_data = {
+                "full_params_size": self.model.full_param_size,
+                "sharded_params_size": self.model.sharded_param_size,
+            }
         
         return {
             "strategy": self.parallel_strategy,
             "throughput": throughput,
             "total_time": end_time - start_time,
             "gpu_memory_usage": torch.cuda.max_memory_allocated(self.device) / 1e9,  # in GB
-            "ddp_logging_data": ddp_logging_data,
-            "ddp_optimizer_enabled": self.enable_ddp_optimizer,
+            "fsdp_logging_data": fsdp_logging_data,
+            "fsdp_enabled": self.enable_fsdp,
+            "fsdp_cpu_offload": self.fsdp_cpu_offload,
         }
 
 class DataPartitioner:
