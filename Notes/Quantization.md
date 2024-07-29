@@ -28,9 +28,11 @@ CODED
 
 ## [FX Graph Mode Post Training Dynamic Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_dynamic.html)
 
-...
+CODED
 
 ## [Static Quantization with Eager Mode in PyTorch](https://pytorch.org/tutorials/advanced/static_quantization_tutorial.html)
+
+...
 
 ## [PyTorch Numeric Suite Tutorial](https://pytorch.org/tutorials/prototype/numeric_suite_tutorial.html)
 

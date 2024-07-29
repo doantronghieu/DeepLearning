@@ -161,7 +161,7 @@ class QuantizationManager:
         except Exception:
             return False
 
-    def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False) -> torch.nn.Module:
+    def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False, is_per_channel: bool = False) -> torch.nn.Module:
         """
         Convert the prepared model to a quantized model.
         
@@ -176,6 +176,8 @@ class QuantizationManager:
             return convert(prepared_model)
         
         if self.use_fx_graph_mode:
+            if is_per_channel:
+                self.qconfig_mapping = QConfigMapping().set_global(default_per_channel_qconfig)
             quantized_model = quantize_fx.convert_fx(prepared_model, convert_custom_config_dict=self.convert_custom_config_dict)
         else:
             quantized_model = convert(prepared_model)
@@ -200,7 +202,7 @@ class QuantizationManager:
                 next_module = list(module.children())[0] if list(module.children()) else None
                 if isinstance(next_module, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d)):
                     module_sequence.append(name.rsplit('.', 1)[0] + '.' + list(module.named_children())[0][0])
-                if isinstance(next_module, (torch.nn.ReLU, torch.nn.ReLU6, torch.nn.LeakyReLU)):
+                if isinstance(next_module, (torch.nn.ReLU, torch.nn.ReLU6)):
                     module_sequence.append(name.rsplit('.', 1)[0] + '.' + list(module.named_children())[0][0])
                 if len(module_sequence) > 1:
                     fusable_modules.append(module_sequence)
@@ -245,8 +247,14 @@ class QuantizationManager:
                     qconfig_mapping.set_module_name(name, default_qconfig)
         return qconfig_mapping
 
-    def benchmark_model(self, model: torch.nn.Module, input_data: torch.Tensor, 
-                        num_runs: int = 100) -> Dict[str, float]:
+    def benchmark_model(
+        self, 
+        model: torch.nn.Module,
+        input_data: torch.Tensor, 
+        target_data: torch.Tensor,
+        num_runs: int = 100,
+        criterion: Optional[torch.nn.Module] = None
+    ) -> Dict[str, float]:
         model.eval()
         torch.cuda.empty_cache()
         
@@ -258,7 +266,7 @@ class QuantizationManager:
             # Benchmark
             start_time = time.time()
             for _ in range(num_runs):
-                _ = model(input_data)
+                output = model(input_data)
             end_time = time.time()
             
         avg_time = (end_time - start_time) / num_runs
@@ -272,10 +280,29 @@ class QuantizationManager:
             'inferences_per_mb': throughput / model_size,
         }
 
+        if criterion is not None and target_data is not None:
+            accuracy = self.evaluate_accuracy(model, input_data, target_data, criterion)
+            result['accuracy'] = accuracy
+
         if self.use_enhanced_benchmarking:
             result.update(self._enhanced_benchmark_metrics(model, input_data))
 
         return result
+
+    def evaluate_accuracy(
+        self, 
+        model: torch.nn.Module, 
+        input_data: torch.Tensor,
+        target_data: torch.Tensor, 
+        criterion: torch.nn.Module
+    ) -> float:
+        model.eval()
+        with torch.no_grad():
+            output = model(input_data)
+            loss = criterion(output, target_data)
+            _, predicted = torch.max(output, 1)
+            accuracy = (predicted == target_data).float().mean().item()
+        return accuracy
 
     def _enhanced_benchmark_metrics(self, model: torch.nn.Module, input_data: torch.Tensor) -> Dict[str, float]:
         memory_usage = torch.cuda.max_memory_allocated() / 1e6 if torch.cuda.is_available() else 0
@@ -587,11 +614,12 @@ class QuantizationManager:
                 module.bias.data += 0.5 * module.weight.data.mean(dim=0)
         return model
 
-    def visualize_quantization_effects(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
-                                       example_inputs: torch.Tensor):
-        """
-        Visualize the effects of quantization on model outputs.
-        """
+    def visualize_quantization_effects(
+        self, 
+        float_model: torch.nn.Module, 
+        quant_model: torch.nn.Module,
+        example_inputs: torch.Tensor
+    ):
         float_model.eval()
         quant_model.eval()
         
@@ -604,8 +632,26 @@ class QuantizationManager:
         print(f"Max absolute difference: {diff.max().item()}")
         print(f"Mean absolute difference: {diff.mean().item()}")
         
-        # Here you could add code to create histograms or other visualizations
-        # of the differences between float and quantized outputs
+        plt.figure(figsize=(12, 4))
+        plt.subplot(131)
+        plt.hist(float_output.flatten().numpy(), bins=50, alpha=0.5, label='Float')
+        plt.hist(quant_output.flatten().numpy(), bins=50, alpha=0.5, label='Quant')
+        plt.legend()
+        plt.title('Output Distribution')
+        
+        plt.subplot(132)
+        plt.hist(diff.flatten().numpy(), bins=50)
+        plt.title('Output Difference')
+        
+        plt.subplot(133)
+        plt.scatter(float_output.flatten().numpy(), quant_output.flatten().numpy(), alpha=0.1)
+        plt.plot([-1, 1], [-1, 1], 'r--')
+        plt.xlabel('Float Outputs')
+        plt.ylabel('Quant Outputs')
+        plt.title('Float vs Quant Outputs')
+        
+        plt.tight_layout()
+        plt.show()
 
     def get_memory_footprint(self, model: torch.nn.Module) -> float:
         """
