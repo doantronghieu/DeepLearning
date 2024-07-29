@@ -4,7 +4,11 @@
 
 ## [API-Quantization](https://pytorch.org/docs/stable/quantization.html#torch.quantization.quantize_dynamic)
 
+CODED
+
 ## [Dynamic Quantization](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html)
+
+CODED
 
 ## [Dynamic Quantization on an LSTM Word Language Model](https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html)
 

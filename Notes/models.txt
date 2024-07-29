@@ -3,7 +3,6 @@
 continue generate the code, start from method "" ()
 Check all again if you missed any detail. And return all of the source code for me.
 
-Check again to see if you missed any detail and return all for me.
 
 Also consider:
 
