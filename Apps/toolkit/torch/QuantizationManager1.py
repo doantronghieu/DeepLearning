@@ -50,6 +50,7 @@ class QuantizationManager:
         self._use_enhanced_benchmarking = False
         
         self.use_pt2e = False
+        self.use_qat = False
         self.quantizer = None
 
     # Feature flag getters and setters
@@ -243,7 +244,7 @@ class QuantizationManager:
         quantizer.set_global(get_symmetric_quantization_config())
         return quantizer
 
-    def _prepare_pt2e(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
+    def _prepare_pt2e(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool):
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = prepare_pt2e(exported_model, self.quantizer)
         return prepared_model
@@ -471,19 +472,25 @@ class QuantizationManager:
         
         return float_accuracy, quant_accuracy
 
-    def quantization_aware_training(self, model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer,criterion: torch.nn.Module, num_epochs: int) -> torch.nn.Module:
-        qat_model = self.prepare_model(model, is_qat=True)
-        qat_model.train()
-
+    def quantization_aware_training(
+        self,
+        model: torch.nn.Module,
+        train_loader,
+        optimizer,
+        criterion,
+        num_epochs
+    ):
+        prepared_model = self.prepare_model(model, next(iter(train_loader))[0], is_qat=True)
+        
         for epoch in range(num_epochs):
             for inputs, targets in train_loader:
                 optimizer.zero_grad()
-                outputs = qat_model(inputs)
+                outputs = prepared_model(inputs)
                 loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
-
-        return self.quantize_model(qat_model)
+        
+        return self.quantize_model(prepared_model)
 
     def set_custom_qconfig(self, qconfig: QConfig) -> None:
         """

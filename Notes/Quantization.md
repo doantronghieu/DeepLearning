@@ -38,11 +38,15 @@ CODED
 
 ## [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html)
 
-...
+CODED
 
 ## [PyTorch 2 Export Quantization-Aware Training (QAT)](https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html)
 
+CODED
+
 ## [PyTorch BackendConfig](https://pytorch.org/tutorials/prototype/backend_config_tutorial.html?highlight=backend)
+
+...
 
 ## [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
 
