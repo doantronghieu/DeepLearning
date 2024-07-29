@@ -18,6 +18,12 @@ from torch.ao.quantization import (
     MinMaxObserver, default_observer, default_weight_observer
 )
 from torch.ao.quantization.observer import default_per_channel_weight_observer
+from torch._export import capture_pre_autograd_graph
+from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+  XNNPACKQuantizer,
+  get_symmetric_quantization_config,
+)
 
 class QuantizationManager:
     def __init__(self, backend: str = 'x86', use_fx: bool = False):
@@ -42,6 +48,9 @@ class QuantizationManager:
         self._use_dynamic_quantization = False
         self._use_custom_module_handling = False
         self._use_enhanced_benchmarking = False
+        
+        self.use_pt2e = False
+        self.quantizer = None
 
     # Feature flag getters and setters
     @property
@@ -77,9 +86,14 @@ class QuantizationManager:
     def use_enhanced_benchmarking(self, value: bool):
         self._use_enhanced_benchmarking = value
     
-    def prepare_model(self, model: torch.nn.Module, example_inputs: Optional[torch.Tensor] = None, 
-                      is_qat: bool = False, is_dynamic: bool = False, 
-                      quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
+    def prepare_model(
+        self,
+        model: torch.nn.Module,
+        example_inputs: Optional[torch.Tensor] = None,
+        is_qat: bool = False,
+        is_dynamic: bool = False, 
+        quantizable_ops: Optional[List[torch.nn.Module]] = None
+    ) -> torch.nn.Module:
         """
         Prepare the model for quantization.
         
@@ -97,6 +111,9 @@ class QuantizationManager:
         
         if self.use_dynamic_quantization or is_dynamic:
             return self._prepare_dynamic(model, quantizable_ops)
+        
+        if self.use_pt2e:
+            return self._prepare_pt2e(model, example_inputs, is_qat)
         
         if self.use_fx_graph_mode:
             return self._prepare_fx(model, example_inputs, is_qat)
@@ -161,7 +178,12 @@ class QuantizationManager:
         except Exception:
             return False
 
-    def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False, is_per_channel: bool = False) -> torch.nn.Module:
+    def quantize_model(
+        self, 
+        prepared_model: torch.nn.Module,
+        is_dynamic: bool = False,
+        is_per_channel: bool = False
+    ) -> torch.nn.Module:
         """
         Convert the prepared model to a quantized model.
         
@@ -174,6 +196,9 @@ class QuantizationManager:
         """
         if is_dynamic:
             return convert(prepared_model)
+        
+        if self.use_pt2e:
+            return convert_pt2e(prepared_model)
         
         if self.use_fx_graph_mode:
             if is_per_channel:
@@ -207,6 +232,21 @@ class QuantizationManager:
                 if len(module_sequence) > 1:
                     fusable_modules.append(module_sequence)
         return fusable_modules
+
+    def set_pt2e_quantization(self, enable: bool = True):
+        self.use_pt2e = enable
+        if enable:
+            self.quantizer = self._create_xnnpack_quantizer()
+
+    def _create_xnnpack_quantizer(self):
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config())
+        return quantizer
+
+    def _prepare_pt2e(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
+        exported_model = capture_pre_autograd_graph(model, example_inputs)
+        prepared_model = prepare_pt2e(exported_model, self.quantizer)
+        return prepared_model
 
     def analyze_quantization(self, float_model: torch.nn.Module, quant_model: torch.nn.Module) -> Dict[str, Any]:
         """
@@ -311,8 +351,12 @@ class QuantizationManager:
             'parameter_count': sum(p.numel() for p in model.parameters()),
         }
     
-    def calibrate_model(self, prepared_model: torch.nn.Module, 
-                        calibration_data: torch.Tensor, num_batches: int = 100) -> None:
+    def calibrate_model(
+        self,
+        prepared_model: torch.nn.Module,
+        calibration_data: torch.Tensor,
+        num_batches: int = 100
+    ) -> None:
         """
         Calibrate the prepared model using the provided calibration data.
         
@@ -334,14 +378,20 @@ class QuantizationManager:
         """
         Save the quantized model.
         """
-        torch.save(model.state_dict(), path)
+        if self.use_pt2e:
+            torch.export.save(model, path)
+        else:
+          torch.save(model.state_dict(), path)
 
     def load_quantized_model(self, model: torch.nn.Module, path: str) -> torch.nn.Module:
         """
         Load a quantized model.
         """
-        model.load_state_dict(torch.load(path))
-        return model
+        if self.use_pt2e:
+            return torch.export.load(path)
+        else:
+          model.load_state_dict(torch.load(path))
+          return model
 
     def save_scripted_quantized_model(self, model: torch.nn.Module, path: str) -> None:
         """
