@@ -46,13 +46,17 @@ CODED
 
 ## [PyTorch BackendConfig](https://pytorch.org/tutorials/prototype/backend_config_tutorial.html?highlight=backend)
 
-...
+CODED
 
 ## [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
+
+CODED
 
 ## PyTorch 2 Export Quantization with X86 Backend through Inductor
 
 ## [Quantization Recipe](https://pytorch.org/tutorials/recipes/quantization.html?highlight=quantization)
+
+...
 
 ## [Fuse Modules Recipe](https://pytorch.org/tutorials/recipes/fuse.html?highlight=quantization)
 
