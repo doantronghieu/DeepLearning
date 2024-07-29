@@ -1,23 +1,32 @@
 # My code starts from here
-import torch
-import torch.ao.quantization
-import torch.ao.quantization.quantize_fx as quantize_fx
-from torch.ao.quantization import QConfigMapping
 import copy
 import io
 import time
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple, List, Callable
+import torch
+from torch.utils.data import DataLoader
+import torch.ao.quantization
+import torch.ao.quantization.quantize_fx as quantize_fx
+from torch.ao.quantization import (
+  QConfigMapping, float16_dynamic_qconfig, default_per_channel_qconfig, 
+  default_qconfig, QConfig, get_default_qconfig, get_default_qat_qconfig, 
+  get_default_qconfig_mapping, propagate_qconfig_, default_dynamic_qconfig, 
+  prepare_qat, prepare, convert, fuse_modules, 
+  MinMaxObserver, default_observer, default_weight_observer
+  
+)
+from torch.ao.quantization.observer import default_per_channel_weight_observer
 
 class QuantizationManager:
     def __init__(self, backend: str = 'x86', use_fx: bool = False):
         self.backend = backend
         self.use_fx = use_fx
-        self.qconfig = torch.ao.quantization.get_default_qconfig(self.backend)
-        self.qat_qconfig = torch.ao.quantization.get_default_qat_qconfig(self.backend)
+        self.qconfig = get_default_qconfig(self.backend)
+        self.qat_qconfig = get_default_qat_qconfig(self.backend)
         torch.backends.quantized.engine = self.backend
 
         if self.backend == 'onednn':
-            self.qconfig_mapping = torch.ao.quantization.get_default_qconfig_mapping('onednn')
+            self.qconfig_mapping = get_default_qconfig_mapping('onednn')
         else:
             self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
 
@@ -52,14 +61,14 @@ class QuantizationManager:
             model.qconfig = self.qat_qconfig if is_qat else self.qconfig
             
             if quantizable_ops:
-                torch.ao.quantization.propagate_qconfig_(model, qconfig_dict={op: self.qconfig for op in quantizable_ops})
+                propagate_qconfig_(model, qconfig_dict={op: self.qconfig for op in quantizable_ops})
             else:
-                torch.ao.quantization.propagate_qconfig_(model)
+                propagate_qconfig_(model)
             
             # Fuse modules if applicable
-            model = torch.ao.quantization.fuse_modules(model, self._get_fusable_modules(model))
+            model = fuse_modules(model, self._get_fusable_modules(model))
             
-            prepared_model = torch.ao.quantization.prepare_qat(model) if is_qat else torch.ao.quantization.prepare(model)
+            prepared_model = prepare_qat(model) if is_qat else prepare(model)
         
         return prepared_model
 
@@ -75,21 +84,21 @@ class QuantizationManager:
             torch.nn.Module: The prepared model.
         """
         if quantizable_ops:
-            qconfig_dict = {op: torch.ao.quantization.default_dynamic_qconfig for op in quantizable_ops}
+            qconfig_dict = {op: default_dynamic_qconfig for op in quantizable_ops}
         else:
             qconfig_dict = {
-                torch.nn.Linear: torch.ao.quantization.default_dynamic_qconfig,
-                torch.nn.LSTM: torch.ao.quantization.default_dynamic_qconfig,
-                torch.nn.GRU: torch.ao.quantization.default_dynamic_qconfig,
-                torch.nn.RNN: torch.ao.quantization.default_dynamic_qconfig,
+                torch.nn.Linear: default_dynamic_qconfig,
+                torch.nn.LSTM: default_dynamic_qconfig,
+                torch.nn.GRU: default_dynamic_qconfig,
+                torch.nn.RNN: default_dynamic_qconfig,
             }
         
-        model.qconfig = torch.ao.quantization.QConfig(
-            activation=torch.ao.quantization.MinMaxObserver.with_args(dtype=torch.qint8),
-            weight=torch.ao.quantization.per_channel_weight_observer.with_args(dtype=torch.qint8, qscheme=torch.per_channel_symmetric)
+        model.qconfig = QConfig(
+            activation=MinMaxObserver.with_args(dtype=torch.qint8),
+            weight=default_per_channel_weight_observer.with_args(dtype=torch.qint8, qscheme=torch.per_channel_symmetric)
         )
         
-        return torch.ao.quantization.prepare(model, qconfig_dict=qconfig_dict)
+        return prepare(model, qconfig_dict=qconfig_dict)
 
     def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False) -> torch.nn.Module:
         """
@@ -103,12 +112,12 @@ class QuantizationManager:
             torch.nn.Module: The quantized model.
         """
         if is_dynamic:
-            return torch.ao.quantization.convert(prepared_model)
+            return convert(prepared_model)
         
         if self.use_fx:
             quantized_model = quantize_fx.convert_fx(prepared_model)
         else:
-            quantized_model = torch.ao.quantization.convert(prepared_model)
+            quantized_model = convert(prepared_model)
         return quantized_model
 
     def _get_fusable_modules(self, model: torch.nn.Module) -> List[List[str]]:
@@ -123,14 +132,14 @@ class QuantizationManager:
         """
         fusable_modules = []
         for name, module in model.named_modules():
-            if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
+            if isinstance(module, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)):
                 module_sequence = [name]
                 if hasattr(module, 'bias') and module.bias is not None:
                     module_sequence.append(name + '.bias')
                 next_module = list(module.children())[0] if list(module.children()) else None
-                if isinstance(next_module, torch.nn.BatchNorm2d):
+                if isinstance(next_module, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d)):
                     module_sequence.append(name.rsplit('.', 1)[0] + '.' + list(module.named_children())[0][0])
-                if isinstance(next_module, (torch.nn.ReLU, torch.nn.ReLU6)):
+                if isinstance(next_module, (torch.nn.ReLU, torch.nn.ReLU6, torch.nn.LeakyReLU)):
                     module_sequence.append(name.rsplit('.', 1)[0] + '.' + list(module.named_children())[0][0])
                 if len(module_sequence) > 1:
                     fusable_modules.append(module_sequence)
@@ -157,6 +166,12 @@ class QuantizationManager:
                     'weight_scale': quant_module.weight_scale,
                     'weight_zero_point': quant_module.weight_zero_point,
                 }
+            elif hasattr(quant_module, 'weight_fake_quant'):
+                analysis[name] = {
+                    'weight_range': (float_module.weight.min().item(), float_module.weight.max().item()),
+                    'weight_scale': quant_module.weight_fake_quant.scale,
+                    'weight_zero_point': quant_module.weight_fake_quant.zero_point,
+                }
         return analysis
 
     def auto_select_qconfig(self, model: torch.nn.Module, example_inputs: torch.Tensor) -> QConfigMapping:
@@ -170,9 +185,14 @@ class QuantizationManager:
         Returns:
             QConfigMapping: The selected quantization configuration mapping.
         """
-        # Implement logic to analyze model and select appropriate qconfig
-        # This is a placeholder implementation
-        return self.qconfig_mapping
+        qconfig_mapping = QConfigMapping()
+        for name, module in model.named_modules():
+            if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
+                if module.in_features < 256:
+                    qconfig_mapping.set_module_name(name, default_per_channel_qconfig)
+                else:
+                    qconfig_mapping.set_module_name(name, default_qconfig)
+        return qconfig_mapping
 
     def benchmark_model(self, model: torch.nn.Module, input_data: torch.Tensor, 
                         num_runs: int = 100) -> Dict[str, float]:
@@ -223,7 +243,8 @@ class QuantizationManager:
         """
         prepared_model.eval()
         with torch.no_grad():
-            prepared_model(calibration_data)
+            for data in calibration_data:
+                prepared_model(data)
 
     def save_quantized_model(self, model: torch.nn.Module, path: str) -> None:
         """
@@ -289,19 +310,8 @@ class QuantizationManager:
         return size
 
     def compare_accuracy(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
-                         test_data: torch.Tensor, target_data: torch.Tensor) -> Tuple[float, float]:
-        """
-        Compare the accuracy of float and quantized models.
-        
-        Args:
-            float_model (torch.nn.Module): The floating-point model.
-            quant_model (torch.nn.Module): The quantized model.
-            test_data (torch.Tensor): Test input data for accuracy comparison.
-            target_data (torch.Tensor): Target data for accuracy comparison.
-        
-        Returns:
-            Tuple[float, float]: Accuracy of float model and quantized model.
-        """
+                         test_data: torch.Tensor, target_data: torch.Tensor,
+                         metric_fn: Callable[[torch.Tensor, torch.Tensor], float]) -> Tuple[float, float]:
         float_model.eval()
         quant_model.eval()
         
@@ -309,8 +319,8 @@ class QuantizationManager:
             float_output = float_model(test_data)
             quant_output = quant_model(test_data)
         
-        float_accuracy = self._calculate_accuracy(float_output, target_data)
-        quant_accuracy = self._calculate_accuracy(quant_output, target_data)
+        float_accuracy = metric_fn(float_output, target_data)
+        quant_accuracy = metric_fn(quant_output, target_data)
         
         return float_accuracy, quant_accuracy
 
@@ -318,3 +328,60 @@ class QuantizationManager:
         # Implement accuracy calculation based on your specific task
         # This is a placeholder implementation
         return ((output - target).abs() < 1e-5).float().mean().item()
+    
+    def quantization_aware_training(self, model: torch.nn.Module, train_loader: DataLoader, 
+                                    optimizer: torch.optim.Optimizer, criterion: torch.nn.Module, 
+                                    num_epochs: int) -> torch.nn.Module:
+        qat_model = self.prepare_model(model, is_qat=True)
+        qat_model.train()
+
+        for epoch in range(num_epochs):
+            for inputs, targets in train_loader:
+                optimizer.zero_grad()
+                outputs = qat_model(inputs)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+
+        return self.quantize_model(qat_model)
+
+    def set_custom_qconfig(self, qconfig: QConfig) -> None:
+        self.qconfig = qconfig
+        self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
+
+    def apply_mixed_precision_quantization(self, model: torch.nn.Module, 
+                                           example_inputs: torch.Tensor) -> torch.nn.Module:
+        qconfig_mapping = QConfigMapping()
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                if module.out_features > 1000:
+                    qconfig_mapping.set_module_name(name, float16_dynamic_qconfig)
+                else:
+                    qconfig_mapping.set_module_name(name, default_qconfig)
+            elif isinstance(module, torch.nn.Conv2d):
+                qconfig_mapping.set_module_name(name, default_qconfig)
+
+        prepared_model = quantize_fx.prepare_fx(model, qconfig_mapping, example_inputs)
+        quantized_model = quantize_fx.convert_fx(prepared_model)
+        return quantized_model
+
+    def quantize_custom_module(self, module: torch.nn.Module, 
+                               quantization_config: Dict[str, Any]) -> torch.nn.Module:
+        class QuantizedCustomModule(torch.nn.Module):
+            def __init__(self, orig_module, qconfig):
+                super().__init__()
+                self.orig_module = orig_module
+                self.qconfig = qconfig
+                self.weight_fake_quant = qconfig.weight()
+                self.activation_post_process = qconfig.activation()
+
+            def forward(self, x):
+                weight_quant = self.weight_fake_quant(self.orig_module.weight)
+                out = self.orig_module._conv_forward(x, weight_quant, self.orig_module.bias)
+                return self.activation_post_process(out)
+
+        qconfig = QConfig(
+            activation=quantization_config.get('activation', default_observer),
+            weight=quantization_config.get('weight', default_weight_observer)
+        )
+        return QuantizedCustomModule(module, qconfig)

@@ -12,6 +12,8 @@ CODED
 
 ## [Dynamic Quantization on an LSTM Word Language Model](https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html)
 
+CODED
+
 ## [Dynamic Quantization on BERT](https://pytorch.org/tutorials/intermediate/dynamic_quantization_bert_tutorial.html)
 
 ## FX Graph Mode Quantization User Guide
