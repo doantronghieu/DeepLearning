@@ -19,6 +19,8 @@ ray
 ray[tune]
 
 # Optimization
+onnx
+onnxruntime
 optuna
 
 # Tracking
