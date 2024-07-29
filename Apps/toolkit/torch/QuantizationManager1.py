@@ -2,6 +2,8 @@
 import copy
 import io
 import time
+import matplotlib.pyplot as plt
+import numpy as np
 from typing import Dict, Any, Optional, Tuple, List, Callable
 import torch
 from torch.utils.data import DataLoader
@@ -38,7 +40,17 @@ class QuantizationManager:
                       is_qat: bool = False, is_dynamic: bool = False, 
                       quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
         """
-        Prepare the model for quantization with enhanced flexibility.
+        Prepare the model for quantization.
+        
+        Args:
+            model: The model to be prepared for quantization.
+            example_inputs: Example inputs for the model (required for FX graph mode).
+            is_qat: Whether to prepare for quantization-aware training.
+            is_dynamic: Whether to prepare for dynamic quantization.
+            quantizable_ops: List of quantizable operations (for eager mode).
+        
+        Returns:
+            Prepared model ready for calibration or quantization.
         """
         model = copy.deepcopy(model)
         
@@ -51,9 +63,6 @@ class QuantizationManager:
             return self._prepare_eager(model, is_qat, quantizable_ops)
 
     def _prepare_fx(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
-        """
-        Prepare the model using FX Graph Mode Quantization.
-        """
         if not self._is_traceable(model):
             raise ValueError("Model is not symbolically traceable. Please check the model architecture.")
 
@@ -61,16 +70,13 @@ class QuantizationManager:
 
         if is_qat:
             prepared_model = quantize_fx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
-                                                        prepare_custom_config_dict=self.prepare_custom_config_dict)
+            prepare_custom_config_dict=self.prepare_custom_config_dict)
         else:
             prepared_model = quantize_fx.prepare_fx(model, self.qconfig_mapping, example_inputs,
-                                                    prepare_custom_config_dict=self.prepare_custom_config_dict)
+            prepare_custom_config_dict=self.prepare_custom_config_dict)
         return prepared_model
 
     def _prepare_eager(self, model: torch.nn.Module, is_qat: bool, quantizable_ops: Optional[List[torch.nn.Module]]) -> torch.nn.Module:
-        """
-        Prepare the model using eager mode quantization.
-        """
         model.eval() if not is_qat else model.train()
         model.qconfig = self.qat_qconfig if is_qat else self.qconfig
         
@@ -84,9 +90,6 @@ class QuantizationManager:
         return prepare_qat(model) if is_qat else prepare(model)
 
     def _prepare_dynamic(self, model: torch.nn.Module, quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
-        """
-        Prepare the model for dynamic quantization with enhanced techniques.
-        """
         if quantizable_ops:
             qconfig_dict = {op: default_dynamic_qconfig for op in quantizable_ops}
         else:
@@ -117,6 +120,13 @@ class QuantizationManager:
     def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False) -> torch.nn.Module:
         """
         Convert the prepared model to a quantized model.
+        
+        Args:
+            prepared_model: The prepared model ready for quantization.
+            is_dynamic: Whether the model was prepared for dynamic quantization.
+        
+        Returns:
+            Quantized model.
         """
         if is_dynamic:
             return convert(prepared_model)
@@ -136,9 +146,6 @@ class QuantizationManager:
         return module
 
     def _get_fusable_modules(self, model: torch.nn.Module) -> List[List[str]]:
-        """
-        Get a list of fusable modules in the model.
-        """
         fusable_modules = []
         for name, module in model.named_modules():
             if isinstance(module, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d, torch.nn.Linear)):
@@ -157,6 +164,13 @@ class QuantizationManager:
     def analyze_quantization(self, float_model: torch.nn.Module, quant_model: torch.nn.Module) -> Dict[str, Any]:
         """
         Analyze the quantization results.
+        
+        Args:
+            float_model: The original floating-point model.
+            quant_model: The quantized model.
+        
+        Returns:
+            Dictionary containing quantization analysis results.
         """
         analysis = {}
         for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
@@ -192,7 +206,15 @@ class QuantizationManager:
     def benchmark_model(self, model: torch.nn.Module, input_data: torch.Tensor, 
                         num_runs: int = 100) -> Dict[str, float]:
         """
-        Benchmark the model's performance with detailed metrics.
+        Benchmark the model's performance.
+        
+        Args:
+            model: The model to benchmark.
+            input_data: Input data for benchmarking.
+            num_runs: Number of runs for benchmarking.
+        
+        Returns:
+            Dictionary containing benchmark results.
         """
         model.eval()
         torch.cuda.empty_cache()
@@ -220,14 +242,23 @@ class QuantizationManager:
         }
 
     def calibrate_model(self, prepared_model: torch.nn.Module, 
-                        calibration_data: torch.Tensor) -> None:
+                        calibration_data: torch.Tensor, num_batches: int = 100) -> None:
         """
         Calibrate the prepared model using the provided calibration data.
+        
+        Args:
+            prepared_model: The prepared model ready for calibration.
+            calibration_data: Tensor containing calibration data.
+            num_batches: Number of batches to use for calibration.
         """
         prepared_model.eval()
         with torch.no_grad():
-            for data in calibration_data:
+            for i, data in enumerate(calibration_data):
+                if i >= num_batches:
+                    break
                 prepared_model(data)
+                if i % 10 == 0:
+                    print(f"Calibration progress: {i}/{num_batches}")
 
     def save_quantized_model(self, model: torch.nn.Module, path: str) -> None:
         """
@@ -259,12 +290,57 @@ class QuantizationManager:
     def get_model_size(model: torch.nn.Module) -> float:
         """
         Get the size of the model in MB.
+        
+        Args:
+            model: The model to measure.
+        
+        Returns:
+            Size of the model in MB.
         """
         buffer = io.BytesIO()
         torch.save(model.state_dict(), buffer)
         size = buffer.getbuffer().nbytes / 1e6  # Size in MB
         return size
 
+    def visualize_weight_comparison(self, float_model: torch.nn.Module, quant_model: torch.nn.Module):
+        """
+        Visualize the weight comparison between float and quantized models.
+        
+        Args:
+            float_model: The original floating-point model.
+            quant_model: The quantized model.
+        """
+        for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
+            if isinstance(quant_module, torch.ao.quantization.QuantizedModule):
+                float_weight = float_module.weight.detach().numpy()
+                quant_weight = quant_module.weight().dequantize().detach().numpy()
+                
+                print(f"Module: {name}")
+                print(f"Max absolute difference: {np.abs(float_weight - quant_weight).max()}")
+                print(f"Mean absolute difference: {np.abs(float_weight - quant_weight).mean()}")
+                
+                plt.figure(figsize=(12, 4))
+                plt.subplot(131)
+                plt.hist(float_weight.flatten(), bins=50, alpha=0.5, label='Float')
+                plt.hist(quant_weight.flatten(), bins=50, alpha=0.5, label='Quant')
+                plt.legend()
+                plt.title('Weight Distribution')
+                
+                plt.subplot(132)
+                plt.hist((float_weight - quant_weight).flatten(), bins=50)
+                plt.title('Weight Difference')
+                
+                plt.subplot(133)
+                plt.scatter(float_weight.flatten(), quant_weight.flatten(), alpha=0.1)
+                plt.plot([-1, 1], [-1, 1], 'r--')
+                plt.xlabel('Float Weights')
+                plt.ylabel('Quant Weights')
+                plt.title('Float vs Quant Weights')
+                
+                plt.tight_layout()
+                plt.show()
+
+    
     def compare_accuracy(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
                          test_data: torch.Tensor, target_data: torch.Tensor,
                          metric_fn: Callable[[torch.Tensor, torch.Tensor], float]) -> Tuple[float, float]:
@@ -526,5 +602,3 @@ class QuantizationManager:
         comparison['memory_reduction_percent'] = (1 - comparison['memory_footprint2'] / comparison['memory_footprint1']) * 100
         
         return comparison
-
-# End of QuantizationManager class

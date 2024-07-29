@@ -20,7 +20,7 @@ CODED
 
 ## [FX Graph Mode Quantization User Guide](https://pytorch.org/tutorials/prototype/fx_graph_mode_quant_guide.html)
 
-...
+CODED
 
 ## [FX Graph Mode Post Training Static Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html)
 
