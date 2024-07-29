@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, Any, Optional, Tuple, List, Callable
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.ao.quantization
 import torch.ao.quantization.quantize_fx as quantize_fx
@@ -35,7 +36,47 @@ class QuantizationManager:
         self.skip_symbolic_trace_modules = []
         self.prepare_custom_config_dict = {}
         self.convert_custom_config_dict = {}
+        
+        # Feature flags
+        self._use_fx_graph_mode = use_fx
+        self._use_dynamic_quantization = False
+        self._use_custom_module_handling = False
+        self._use_enhanced_benchmarking = False
 
+    # Feature flag getters and setters
+    @property
+    def use_fx_graph_mode(self):
+        return self._use_fx_graph_mode
+
+    @use_fx_graph_mode.setter
+    def use_fx_graph_mode(self, value: bool):
+        self._use_fx_graph_mode = value
+        self.use_fx = value
+
+    @property
+    def use_dynamic_quantization(self):
+        return self._use_dynamic_quantization
+
+    @use_dynamic_quantization.setter
+    def use_dynamic_quantization(self, value: bool):
+        self._use_dynamic_quantization = value
+
+    @property
+    def use_custom_module_handling(self):
+        return self._use_custom_module_handling
+
+    @use_custom_module_handling.setter
+    def use_custom_module_handling(self, value: bool):
+        self._use_custom_module_handling = value
+
+    @property
+    def use_enhanced_benchmarking(self):
+        return self._use_enhanced_benchmarking
+
+    @use_enhanced_benchmarking.setter
+    def use_enhanced_benchmarking(self, value: bool):
+        self._use_enhanced_benchmarking = value
+    
     def prepare_model(self, model: torch.nn.Module, example_inputs: Optional[torch.Tensor] = None, 
                       is_qat: bool = False, is_dynamic: bool = False, 
                       quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
@@ -54,26 +95,29 @@ class QuantizationManager:
         """
         model = copy.deepcopy(model)
         
-        if is_dynamic:
+        if self.use_dynamic_quantization or is_dynamic:
             return self._prepare_dynamic(model, quantizable_ops)
         
-        if self.use_fx:
+        if self.use_fx_graph_mode:
             return self._prepare_fx(model, example_inputs, is_qat)
         else:
             return self._prepare_eager(model, is_qat, quantizable_ops)
 
     def _prepare_fx(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
         if not self._is_traceable(model):
-            raise ValueError("Model is not symbolically traceable. Please check the model architecture.")
+            if self.use_custom_module_handling:
+                return self.handle_non_traceable_module(model, self.prepare_custom_config_dict)
+            else:
+                raise ValueError("Model is not symbolically traceable. Enable custom module handling or check the model architecture.")
 
         self.prepare_custom_config_dict["non_traceable_module_name"] = self.skip_symbolic_trace_modules
 
         if is_qat:
             prepared_model = quantize_fx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
-            prepare_custom_config_dict=self.prepare_custom_config_dict)
+                prepare_custom_config_dict=self.prepare_custom_config_dict)
         else:
             prepared_model = quantize_fx.prepare_fx(model, self.qconfig_mapping, example_inputs,
-            prepare_custom_config_dict=self.prepare_custom_config_dict)
+                prepare_custom_config_dict=self.prepare_custom_config_dict)
         return prepared_model
 
     def _prepare_eager(self, model: torch.nn.Module, is_qat: bool, quantizable_ops: Optional[List[torch.nn.Module]]) -> torch.nn.Module:
@@ -131,7 +175,7 @@ class QuantizationManager:
         if is_dynamic:
             return convert(prepared_model)
         
-        if self.use_fx:
+        if self.use_fx_graph_mode:
             quantized_model = quantize_fx.convert_fx(prepared_model, convert_custom_config_dict=self.convert_custom_config_dict)
         else:
             quantized_model = convert(prepared_model)
@@ -143,6 +187,7 @@ class QuantizationManager:
         """
         # Implementation depends on the specific non-traceable module
         # This is a placeholder for custom handling logic
+        print(f"Custom handling for non-traceable module: {type(module).__name__}")
         return module
 
     def _get_fusable_modules(self, model: torch.nn.Module) -> List[List[str]]:
@@ -191,9 +236,6 @@ class QuantizationManager:
         return analysis
 
     def auto_select_qconfig(self, model: torch.nn.Module, example_inputs: torch.Tensor) -> QConfigMapping:
-        """
-        Automatically select the best quantization configuration based on model analysis.
-        """
         qconfig_mapping = QConfigMapping()
         for name, module in model.named_modules():
             if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
@@ -205,17 +247,6 @@ class QuantizationManager:
 
     def benchmark_model(self, model: torch.nn.Module, input_data: torch.Tensor, 
                         num_runs: int = 100) -> Dict[str, float]:
-        """
-        Benchmark the model's performance.
-        
-        Args:
-            model: The model to benchmark.
-            input_data: Input data for benchmarking.
-            num_runs: Number of runs for benchmarking.
-        
-        Returns:
-            Dictionary containing benchmark results.
-        """
         model.eval()
         torch.cuda.empty_cache()
         
@@ -234,13 +265,25 @@ class QuantizationManager:
         throughput = 1 / avg_time  # inferences per second
         model_size = self.get_model_size(model)
         
-        return {
+        result = {
             'avg_inference_time': avg_time * 1000,  # ms
             'throughput': throughput,
             'model_size_mb': model_size,
             'inferences_per_mb': throughput / model_size,
         }
 
+        if self.use_enhanced_benchmarking:
+            result.update(self._enhanced_benchmark_metrics(model, input_data))
+
+        return result
+
+    def _enhanced_benchmark_metrics(self, model: torch.nn.Module, input_data: torch.Tensor) -> Dict[str, float]:
+        memory_usage = torch.cuda.max_memory_allocated() / 1e6 if torch.cuda.is_available() else 0
+        return {
+            'peak_memory_usage_mb': memory_usage,
+            'parameter_count': sum(p.numel() for p in model.parameters()),
+        }
+    
     def calibrate_model(self, prepared_model: torch.nn.Module, 
                         calibration_data: torch.Tensor, num_batches: int = 100) -> None:
         """
@@ -303,13 +346,6 @@ class QuantizationManager:
         return size
 
     def visualize_weight_comparison(self, float_model: torch.nn.Module, quant_model: torch.nn.Module):
-        """
-        Visualize the weight comparison between float and quantized models.
-        
-        Args:
-            float_model: The original floating-point model.
-            quant_model: The quantized model.
-        """
         for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
             if isinstance(quant_module, torch.ao.quantization.QuantizedModule):
                 float_weight = float_module.weight.detach().numpy()
@@ -339,7 +375,6 @@ class QuantizationManager:
                 
                 plt.tight_layout()
                 plt.show()
-
     
     def compare_accuracy(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
                          test_data: torch.Tensor, target_data: torch.Tensor,
@@ -359,12 +394,7 @@ class QuantizationManager:
         
         return float_accuracy, quant_accuracy
 
-    def quantization_aware_training(self, model: torch.nn.Module, train_loader: DataLoader, 
-                                    optimizer: torch.optim.Optimizer, criterion: torch.nn.Module, 
-                                    num_epochs: int) -> torch.nn.Module:
-        """
-        Perform Quantization-Aware Training (QAT) on the model.
-        """
+    def quantization_aware_training(self, model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer,criterion: torch.nn.Module, num_epochs: int) -> torch.nn.Module:
         qat_model = self.prepare_model(model, is_qat=True)
         qat_model.train()
 
@@ -410,7 +440,7 @@ class QuantizationManager:
         Quantize a custom module using the provided configuration.
         """
         class QuantizedCustomModule(torch.nn.Module):
-            def __init__(self, orig_module, qconfig):
+            def __init__(self, orig_module: nn.Module, qconfig):
                 super().__init__()
                 self.orig_module = orig_module
                 self.qconfig = qconfig
