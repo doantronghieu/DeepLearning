@@ -8,12 +8,11 @@ from torch.utils.data import DataLoader
 import torch.ao.quantization
 import torch.ao.quantization.quantize_fx as quantize_fx
 from torch.ao.quantization import (
-  QConfigMapping, float16_dynamic_qconfig, default_per_channel_qconfig, 
-  default_qconfig, QConfig, get_default_qconfig, get_default_qat_qconfig, 
-  get_default_qconfig_mapping, propagate_qconfig_, default_dynamic_qconfig, 
-  prepare_qat, prepare, convert, fuse_modules, 
-  MinMaxObserver, default_observer, default_weight_observer
-  
+    QConfigMapping, float16_dynamic_qconfig, default_per_channel_qconfig, 
+    default_qconfig, QConfig, get_default_qconfig, get_default_qat_qconfig, 
+    get_default_qconfig_mapping, propagate_qconfig_, default_dynamic_qconfig, 
+    prepare_qat, prepare, convert, fuse_modules, 
+    MinMaxObserver, default_observer, default_weight_observer
 )
 from torch.ao.quantization.observer import default_per_channel_weight_observer
 
@@ -30,21 +29,16 @@ class QuantizationManager:
         else:
             self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
 
+        # New attributes for FX-specific configurations
+        self.skip_symbolic_trace_modules = []
+        self.prepare_custom_config_dict = {}
+        self.convert_custom_config_dict = {}
+
     def prepare_model(self, model: torch.nn.Module, example_inputs: Optional[torch.Tensor] = None, 
                       is_qat: bool = False, is_dynamic: bool = False, 
                       quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
         """
         Prepare the model for quantization with enhanced flexibility.
-        
-        Args:
-            model (torch.nn.Module): The model to prepare for quantization.
-            example_inputs (Optional[torch.Tensor]): Example inputs for the model (needed for FX mode).
-            is_qat (bool): Whether to prepare for quantization-aware training.
-            is_dynamic (bool): Whether to use dynamic quantization.
-            quantizable_ops (Optional[List[torch.nn.Module]]): List of module types to quantize.
-        
-        Returns:
-            torch.nn.Module: The prepared model.
         """
         model = copy.deepcopy(model)
         
@@ -52,36 +46,46 @@ class QuantizationManager:
             return self._prepare_dynamic(model, quantizable_ops)
         
         if self.use_fx:
-            if is_qat:
-                prepared_model = quantize_fx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs)
-            else:
-                prepared_model = quantize_fx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+            return self._prepare_fx(model, example_inputs, is_qat)
         else:
-            model.eval() if not is_qat else model.train()
-            model.qconfig = self.qat_qconfig if is_qat else self.qconfig
-            
-            if quantizable_ops:
-                propagate_qconfig_(model, qconfig_dict={op: self.qconfig for op in quantizable_ops})
-            else:
-                propagate_qconfig_(model)
-            
-            # Fuse modules if applicable
-            model = fuse_modules(model, self._get_fusable_modules(model))
-            
-            prepared_model = prepare_qat(model) if is_qat else prepare(model)
-        
+            return self._prepare_eager(model, is_qat, quantizable_ops)
+
+    def _prepare_fx(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
+        """
+        Prepare the model using FX Graph Mode Quantization.
+        """
+        if not self._is_traceable(model):
+            raise ValueError("Model is not symbolically traceable. Please check the model architecture.")
+
+        self.prepare_custom_config_dict["non_traceable_module_name"] = self.skip_symbolic_trace_modules
+
+        if is_qat:
+            prepared_model = quantize_fx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
+                                                        prepare_custom_config_dict=self.prepare_custom_config_dict)
+        else:
+            prepared_model = quantize_fx.prepare_fx(model, self.qconfig_mapping, example_inputs,
+                                                    prepare_custom_config_dict=self.prepare_custom_config_dict)
         return prepared_model
+
+    def _prepare_eager(self, model: torch.nn.Module, is_qat: bool, quantizable_ops: Optional[List[torch.nn.Module]]) -> torch.nn.Module:
+        """
+        Prepare the model using eager mode quantization.
+        """
+        model.eval() if not is_qat else model.train()
+        model.qconfig = self.qat_qconfig if is_qat else self.qconfig
+        
+        if quantizable_ops:
+            propagate_qconfig_(model, qconfig_dict={op: self.qconfig for op in quantizable_ops})
+        else:
+            propagate_qconfig_(model)
+        
+        model = fuse_modules(model, self._get_fusable_modules(model))
+        
+        return prepare_qat(model) if is_qat else prepare(model)
 
     def _prepare_dynamic(self, model: torch.nn.Module, quantizable_ops: Optional[List[torch.nn.Module]] = None) -> torch.nn.Module:
         """
         Prepare the model for dynamic quantization with enhanced techniques.
-        
-        Args:
-            model (torch.nn.Module): The model to prepare for dynamic quantization.
-            quantizable_ops (Optional[List[torch.nn.Module]]): List of module types to quantize.
-        
-        Returns:
-            torch.nn.Module: The prepared model.
         """
         if quantizable_ops:
             qconfig_dict = {op: default_dynamic_qconfig for op in quantizable_ops}
@@ -100,35 +104,40 @@ class QuantizationManager:
         
         return prepare(model, qconfig_dict=qconfig_dict)
 
+    def _is_traceable(self, model: torch.nn.Module) -> bool:
+        """
+        Check if the model is symbolically traceable.
+        """
+        try:
+            torch.jit.script(model)
+            return True
+        except Exception:
+            return False
+
     def quantize_model(self, prepared_model: torch.nn.Module, is_dynamic: bool = False) -> torch.nn.Module:
         """
         Convert the prepared model to a quantized model.
-        
-        Args:
-            prepared_model (torch.nn.Module): The prepared model to quantize.
-            is_dynamic (bool): Whether to use dynamic quantization.
-        
-        Returns:
-            torch.nn.Module: The quantized model.
         """
         if is_dynamic:
             return convert(prepared_model)
         
         if self.use_fx:
-            quantized_model = quantize_fx.convert_fx(prepared_model)
+            quantized_model = quantize_fx.convert_fx(prepared_model, convert_custom_config_dict=self.convert_custom_config_dict)
         else:
             quantized_model = convert(prepared_model)
         return quantized_model
 
+    def handle_non_traceable_module(self, module: torch.nn.Module, config: Dict[str, Any]) -> torch.nn.Module:
+        """
+        Handle non-traceable modules by applying custom quantization techniques.
+        """
+        # Implementation depends on the specific non-traceable module
+        # This is a placeholder for custom handling logic
+        return module
+
     def _get_fusable_modules(self, model: torch.nn.Module) -> List[List[str]]:
         """
         Get a list of fusable modules in the model.
-        
-        Args:
-            model (torch.nn.Module): The model to analyze.
-        
-        Returns:
-            List[List[str]]: List of fusable module sequences.
         """
         fusable_modules = []
         for name, module in model.named_modules():
@@ -148,13 +157,6 @@ class QuantizationManager:
     def analyze_quantization(self, float_model: torch.nn.Module, quant_model: torch.nn.Module) -> Dict[str, Any]:
         """
         Analyze the quantization results.
-        
-        Args:
-            float_model (torch.nn.Module): The original floating-point model.
-            quant_model (torch.nn.Module): The quantized model.
-        
-        Returns:
-            Dict[str, Any]: Analysis results including weight ranges, activation ranges, and quantization parameters.
         """
         analysis = {}
         for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
@@ -177,13 +179,6 @@ class QuantizationManager:
     def auto_select_qconfig(self, model: torch.nn.Module, example_inputs: torch.Tensor) -> QConfigMapping:
         """
         Automatically select the best quantization configuration based on model analysis.
-        
-        Args:
-            model (torch.nn.Module): The model to analyze.
-            example_inputs (torch.Tensor): Example inputs for the model.
-        
-        Returns:
-            QConfigMapping: The selected quantization configuration mapping.
         """
         qconfig_mapping = QConfigMapping()
         for name, module in model.named_modules():
@@ -198,14 +193,6 @@ class QuantizationManager:
                         num_runs: int = 100) -> Dict[str, float]:
         """
         Benchmark the model's performance with detailed metrics.
-        
-        Args:
-            model (torch.nn.Module): The model to benchmark.
-            input_data (torch.Tensor): Input data for the model.
-            num_runs (int): Number of inference runs to average over.
-        
-        Returns:
-            Dict[str, float]: Dictionary containing various performance metrics.
         """
         model.eval()
         torch.cuda.empty_cache()
@@ -236,10 +223,6 @@ class QuantizationManager:
                         calibration_data: torch.Tensor) -> None:
         """
         Calibrate the prepared model using the provided calibration data.
-        
-        Args:
-            prepared_model (torch.nn.Module): The prepared model to calibrate.
-            calibration_data (torch.Tensor): The data to use for calibration.
         """
         prepared_model.eval()
         with torch.no_grad():
@@ -249,23 +232,12 @@ class QuantizationManager:
     def save_quantized_model(self, model: torch.nn.Module, path: str) -> None:
         """
         Save the quantized model.
-        
-        Args:
-            model (torch.nn.Module): The quantized model to save.
-            path (str): The path to save the model to.
         """
         torch.save(model.state_dict(), path)
 
     def load_quantized_model(self, model: torch.nn.Module, path: str) -> torch.nn.Module:
         """
         Load a quantized model.
-        
-        Args:
-            model (torch.nn.Module): An instance of the model architecture.
-            path (str): The path to load the model from.
-        
-        Returns:
-            torch.nn.Module: The loaded quantized model.
         """
         model.load_state_dict(torch.load(path))
         return model
@@ -273,10 +245,6 @@ class QuantizationManager:
     def save_scripted_quantized_model(self, model: torch.nn.Module, path: str) -> None:
         """
         Save the quantized model as a TorchScript model.
-        
-        Args:
-            model (torch.nn.Module): The quantized model to save.
-            path (str): The path to save the model to.
         """
         scripted_model = torch.jit.script(model)
         torch.jit.save(scripted_model, path)
@@ -284,12 +252,6 @@ class QuantizationManager:
     def load_scripted_quantized_model(self, path: str) -> torch.jit.ScriptModule:
         """
         Load a TorchScript quantized model.
-        
-        Args:
-            path (str): The path to load the model from.
-        
-        Returns:
-            torch.jit.ScriptModule: The loaded quantized model.
         """
         return torch.jit.load(path)
 
@@ -297,12 +259,6 @@ class QuantizationManager:
     def get_model_size(model: torch.nn.Module) -> float:
         """
         Get the size of the model in MB.
-        
-        Args:
-            model (torch.nn.Module): The model to get the size of.
-        
-        Returns:
-            float: The size of the model in MB.
         """
         buffer = io.BytesIO()
         torch.save(model.state_dict(), buffer)
@@ -312,6 +268,9 @@ class QuantizationManager:
     def compare_accuracy(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
                          test_data: torch.Tensor, target_data: torch.Tensor,
                          metric_fn: Callable[[torch.Tensor, torch.Tensor], float]) -> Tuple[float, float]:
+        """
+        Compare the accuracy of float and quantized models.
+        """
         float_model.eval()
         quant_model.eval()
         
@@ -324,14 +283,12 @@ class QuantizationManager:
         
         return float_accuracy, quant_accuracy
 
-    def _calculate_accuracy(self, output: torch.Tensor, target: torch.Tensor) -> float:
-        # Implement accuracy calculation based on your specific task
-        # This is a placeholder implementation
-        return ((output - target).abs() < 1e-5).float().mean().item()
-    
     def quantization_aware_training(self, model: torch.nn.Module, train_loader: DataLoader, 
                                     optimizer: torch.optim.Optimizer, criterion: torch.nn.Module, 
                                     num_epochs: int) -> torch.nn.Module:
+        """
+        Perform Quantization-Aware Training (QAT) on the model.
+        """
         qat_model = self.prepare_model(model, is_qat=True)
         qat_model.train()
 
@@ -346,11 +303,17 @@ class QuantizationManager:
         return self.quantize_model(qat_model)
 
     def set_custom_qconfig(self, qconfig: QConfig) -> None:
+        """
+        Set a custom quantization configuration.
+        """
         self.qconfig = qconfig
         self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
 
     def apply_mixed_precision_quantization(self, model: torch.nn.Module, 
                                            example_inputs: torch.Tensor) -> torch.nn.Module:
+        """
+        Apply mixed precision quantization to the model.
+        """
         qconfig_mapping = QConfigMapping()
         for name, module in model.named_modules():
             if isinstance(module, torch.nn.Linear):
@@ -367,6 +330,9 @@ class QuantizationManager:
 
     def quantize_custom_module(self, module: torch.nn.Module, 
                                quantization_config: Dict[str, Any]) -> torch.nn.Module:
+        """
+        Quantize a custom module using the provided configuration.
+        """
         class QuantizedCustomModule(torch.nn.Module):
             def __init__(self, orig_module, qconfig):
                 super().__init__()
@@ -385,3 +351,180 @@ class QuantizationManager:
             weight=quantization_config.get('weight', default_weight_observer)
         )
         return QuantizedCustomModule(module, qconfig)
+
+    def set_skip_symbolic_trace_modules(self, module_list: List[str]):
+        """
+        Set the list of modules to skip during symbolic tracing.
+        """
+        self.skip_symbolic_trace_modules = module_list
+
+    def set_prepare_custom_config(self, config: Dict[str, Any]):
+        """
+        Set custom configuration for the prepare step in FX Graph Mode Quantization.
+        """
+        self.prepare_custom_config_dict = config
+
+    def set_convert_custom_config(self, config: Dict[str, Any]):
+        """
+        Set custom configuration for the convert step in FX Graph Mode Quantization.
+        """
+        self.convert_custom_config_dict = config
+
+    def get_qconfig_mapping(self) -> QConfigMapping:
+        """
+        Get the current QConfigMapping.
+        """
+        return self.qconfig_mapping
+
+    def set_qconfig_mapping(self, qconfig_mapping: QConfigMapping):
+        """
+        Set a custom QConfigMapping.
+        """
+        self.qconfig_mapping = qconfig_mapping
+
+    def fuse_model(self, model: torch.nn.Module) -> torch.nn.Module:
+        """
+        Fuse modules in the model for improved performance.
+        """
+        model.eval()
+        model = torch.quantization.fuse_modules(model, self._get_fusable_modules(model))
+        return model
+
+    def _get_observed_module(self, module: torch.nn.Module, qconfig: QConfig) -> torch.nn.Module:
+        """
+        Get the observed version of a module for a given QConfig.
+        """
+        if isinstance(module, torch.nn.Conv2d):
+            return torch.ao.quantization.QuantizedConv2d.from_float(module)
+        elif isinstance(module, torch.nn.Linear):
+            return torch.ao.quantization.QuantizedLinear.from_float(module)
+        else:
+            raise ValueError(f"Unsupported module type: {type(module)}")
+
+    def optimize_for_inference(self, model: torch.nn.Module) -> torch.nn.Module:
+        """
+        Optimize the quantized model for inference.
+        """
+        model.eval()
+        if self.use_fx:
+            model = torch.ao.quantization.quantize_fx.convert_fx(model)
+        else:
+            model = torch.quantization.convert(model)
+        return torch.jit.script(model)
+
+    def quantize_per_channel(self, model: torch.nn.Module, example_inputs: torch.Tensor) -> torch.nn.Module:
+        """
+        Apply per-channel quantization to the model.
+        """
+        qconfig_mapping = QConfigMapping().set_global(default_per_channel_qconfig)
+        prepared_model = quantize_fx.prepare_fx(model, qconfig_mapping, example_inputs)
+        quantized_model = quantize_fx.convert_fx(prepared_model)
+        return quantized_model
+
+    def quantize_dynamic(self, model: torch.nn.Module, example_inputs: torch.Tensor) -> torch.nn.Module:
+        """
+        Apply dynamic quantization to the model.
+        """
+        qconfig_mapping = QConfigMapping().set_global(default_dynamic_qconfig)
+        if self.use_fx:
+            prepared_model = quantize_fx.prepare_fx(model, qconfig_mapping, example_inputs)
+            quantized_model = quantize_fx.convert_fx(prepared_model)
+        else:
+            quantized_model = torch.quantization.quantize_dynamic(model, qconfig_spec=qconfig_mapping)
+        return quantized_model
+
+    def export_torchscript(self, model: torch.nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to TorchScript format.
+        """
+        model.eval()
+        traced_model = torch.jit.trace(model, example_inputs)
+        torch.jit.save(traced_model, path)
+
+    def export_onnx(self, model: torch.nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to ONNX format.
+        """
+        model.eval()
+        torch.onnx.export(model, example_inputs, path, opset_version=11)
+
+    def set_qat_learning_rate(self, optimizer: torch.optim.Optimizer, lr: float):
+        """
+        Set the learning rate for Quantization-Aware Training.
+        """
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+
+    def quantize_embedding(self, embedding: torch.nn.Embedding, num_bits: int = 8) -> torch.nn.Embedding:
+        """
+        Quantize an embedding layer.
+        """
+        embedding.weight.data = torch.quantize_per_tensor(embedding.weight.data, 1 / 2**(num_bits-1), 0, torch.qint8)
+        return embedding
+
+    def apply_cross_layer_equalization(self, model: torch.nn.Module) -> torch.nn.Module:
+        """
+        Apply Cross-Layer Equalization (CLE) to improve quantization accuracy.
+        """
+        # This is a placeholder implementation. CLE requires a more complex implementation
+        # that analyzes and adjusts weights across multiple layers.
+        return model
+
+    def apply_bias_correction(self, model: torch.nn.Module) -> torch.nn.Module:
+        """
+        Apply bias correction to compensate for quantization errors.
+        """
+        for name, module in model.named_modules():
+            if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)) and module.bias is not None:
+                # This is a simplified bias correction. A more accurate implementation
+                # would involve analyzing the quantization error and adjusting accordingly.
+                module.bias.data += 0.5 * module.weight.data.mean(dim=0)
+        return model
+
+    def visualize_quantization_effects(self, float_model: torch.nn.Module, quant_model: torch.nn.Module, 
+                                       example_inputs: torch.Tensor):
+        """
+        Visualize the effects of quantization on model outputs.
+        """
+        float_model.eval()
+        quant_model.eval()
+        
+        with torch.no_grad():
+            float_output = float_model(example_inputs)
+            quant_output = quant_model(example_inputs)
+        
+        diff = (float_output - quant_output).abs()
+        
+        print(f"Max absolute difference: {diff.max().item()}")
+        print(f"Mean absolute difference: {diff.mean().item()}")
+        
+        # Here you could add code to create histograms or other visualizations
+        # of the differences between float and quantized outputs
+
+    def get_memory_footprint(self, model: torch.nn.Module) -> float:
+        """
+        Get the memory footprint of the model in MB.
+        """
+        mem_params = sum([param.nelement()*param.element_size() for param in model.parameters()])
+        mem_bufs = sum([buf.nelement()*buf.element_size() for buf in model.buffers()])
+        mem_total = mem_params + mem_bufs
+        return mem_total / (1024 * 1024)  # Convert to MB
+
+    def compare_models(self, model1: torch.nn.Module, model2: torch.nn.Module) -> Dict[str, Any]:
+        """
+        Compare two models (e.g., float vs quantized) and return various metrics.
+        """
+        comparison = {
+            'param_count1': sum(p.numel() for p in model1.parameters()),
+            'param_count2': sum(p.numel() for p in model2.parameters()),
+            'memory_footprint1': self.get_memory_footprint(model1),
+            'memory_footprint2': self.get_memory_footprint(model2),
+        }
+        
+        comparison['param_count_diff'] = comparison['param_count1'] - comparison['param_count2']
+        comparison['memory_footprint_diff'] = comparison['memory_footprint1'] - comparison['memory_footprint2']
+        comparison['memory_reduction_percent'] = (1 - comparison['memory_footprint2'] / comparison['memory_footprint1']) * 100
+        
+        return comparison
+
+# End of QuantizationManager class
