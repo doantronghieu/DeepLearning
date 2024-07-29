@@ -9,14 +9,18 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.ao.quantization
+from torch.ao.quantization.backend_config import (
+    BackendConfig, BackendPatternConfig, DTypeConfig, ObservationType
+)
 import torch.ao.quantization.quantize_fx as quantize_fx
 from torch.ao.quantization import (
     QConfigMapping, float16_dynamic_qconfig, default_per_channel_qconfig, 
     default_qconfig, QConfig, get_default_qconfig, get_default_qat_qconfig, 
     get_default_qconfig_mapping, propagate_qconfig_, default_dynamic_qconfig, 
-    prepare_qat, prepare, convert, fuse_modules, 
+    prepare_qat, prepare, convert, fuse_modules,
     MinMaxObserver, default_observer, default_weight_observer
 )
+from torch.ao.quantization.quantize_fx import convert_fx, prepare_fx, prepare_qat_fx
 from torch.ao.quantization.observer import default_per_channel_weight_observer
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
@@ -28,6 +32,11 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 class QuantizationManager:
     def __init__(self, backend: str = 'x86', use_fx: bool = False):
         self.backend = backend
+        self.backend_config = None
+        self.use_backend_config = False
+        self.use_pt2e = False
+        self.xnnpack_quantizer = None
+        
         self.use_fx = use_fx
         self.qconfig = get_default_qconfig(self.backend)
         self.qat_qconfig = get_default_qat_qconfig(self.backend)
@@ -54,6 +63,16 @@ class QuantizationManager:
         self.quantizer = None
 
     # Feature flag getters and setters
+    @property
+    def set_use_backend_config(self, enable: bool):
+        self.use_backend_config = enable
+
+    @property
+    def set_use_pt2e(self, enable: bool):
+        self.use_pt2e = enable
+        if enable:
+            self.xnnpack_quantizer = self._create_xnnpack_quantizer()
+
     @property
     def use_fx_graph_mode(self):
         return self._use_fx_graph_mode
@@ -86,6 +105,39 @@ class QuantizationManager:
     @use_enhanced_benchmarking.setter
     def use_enhanced_benchmarking(self, value: bool):
         self._use_enhanced_benchmarking = value
+    
+    def set_backend_config(self, backend_config: BackendConfig):
+        """
+        Set a custom BackendConfig for quantization.
+        """
+        self.backend_config = backend_config
+
+    def create_dtype_config(self, input_dtype, output_dtype, weight_dtype, bias_dtype):
+        """
+        Create a DTypeConfig with the specified dtypes.
+        """
+        return DTypeConfig(
+            input_dtype=input_dtype,
+            output_dtype=output_dtype,
+            weight_dtype=weight_dtype,
+            bias_dtype=bias_dtype
+        )
+
+    def create_backend_pattern_config(self, pattern, observation_type, dtype_config):
+        """
+        Create a BackendPatternConfig for a specific pattern.
+        """
+        return BackendPatternConfig(pattern) \
+            .set_observation_type(observation_type) \
+            .add_dtype_config(dtype_config)
+
+    def setup_fusion(self, pattern, fused_module, fuser_method):
+        """
+        Set up fusion for a specific pattern.
+        """
+        return BackendPatternConfig(pattern) \
+            .set_fused_module(fused_module) \
+            .set_fuser_method(fuser_method)
     
     def prepare_model(
         self,
@@ -121,7 +173,12 @@ class QuantizationManager:
         else:
             return self._prepare_eager(model, is_qat, quantizable_ops)
 
-    def _prepare_fx(self, model: torch.nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> torch.nn.Module:
+    def _prepare_fx(
+        self, 
+        model: torch.nn.Module, 
+        example_inputs: torch.Tensor, 
+        is_qat: bool
+    ) -> torch.nn.Module:
         if not self._is_traceable(model):
             if self.use_custom_module_handling:
                 return self.handle_non_traceable_module(model, self.prepare_custom_config_dict)
@@ -131,11 +188,13 @@ class QuantizationManager:
         self.prepare_custom_config_dict["non_traceable_module_name"] = self.skip_symbolic_trace_modules
 
         if is_qat:
-            prepared_model = quantize_fx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
-                prepare_custom_config_dict=self.prepare_custom_config_dict)
+            prepared_model = prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
+                prepare_custom_config_dict=self.prepare_custom_config_dict,
+                backend_config=self.backend_config)
         else:
-            prepared_model = quantize_fx.prepare_fx(model, self.qconfig_mapping, example_inputs,
-                prepare_custom_config_dict=self.prepare_custom_config_dict)
+            prepared_model = prepare_fx(model, self.qconfig_mapping, example_inputs,
+                prepare_custom_config_dict=self.prepare_custom_config_dict,
+                backend_config=self.backend_config)
         return prepared_model
 
     def _prepare_eager(self, model: torch.nn.Module, is_qat: bool, quantizable_ops: Optional[List[torch.nn.Module]]) -> torch.nn.Module:
@@ -204,7 +263,9 @@ class QuantizationManager:
         if self.use_fx_graph_mode:
             if is_per_channel:
                 self.qconfig_mapping = QConfigMapping().set_global(default_per_channel_qconfig)
-            quantized_model = quantize_fx.convert_fx(prepared_model, convert_custom_config_dict=self.convert_custom_config_dict)
+            quantized_model = convert_fx(prepared_model, 
+                                         convert_custom_config_dict=self.convert_custom_config_dict,
+                                         backend_config=self.backend_config)
         else:
             quantized_model = convert(prepared_model)
         return quantized_model
