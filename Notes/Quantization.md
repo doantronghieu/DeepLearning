@@ -56,8 +56,10 @@ CODED
 
 ## [Quantization Recipe](https://pytorch.org/tutorials/recipes/quantization.html?highlight=quantization)
 
-...
+CODED
 
 ## [Fuse Modules Recipe](https://pytorch.org/tutorials/recipes/fuse.html?highlight=quantization)
+
+...
 
 ## [GPU Quantization with TorchAO](https://pytorch.org/tutorials/prototype/gpu_quantization_torchao_tutorial.html?highlight=quantization)

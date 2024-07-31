@@ -1,0 +1,10 @@
+- I want to outsource logics relate to backend management in QuantizationManager to a new class: QuantizationBackend
+- I want to outsource logics relate to "fx" in QuantizationManager to a new class
+- I want to outsource logics relate to metric calculating in QuantizationManager to a new class
+- I want to integrate logics relate to "dynamic quantization" in QuantizationManager to class DynamicQuantizer
+- I want to integrate logics relate to "static quantization" in QuantizationManager to class StaticQuantizer
+- I want to integrate logics relate to "quantization aware training" in QuantizationManager to class QATQuantizer
+- ...
+
+
+QuantizationBackend not have attr backend_config
