@@ -4,7 +4,27 @@
 - I want to integrate logics relate to "dynamic quantization" in QuantizationManager to class DynamicQuantizer
 - I want to integrate logics relate to "static quantization" in QuantizationManager to class StaticQuantizer
 - I want to integrate logics relate to "quantization aware training" in QuantizationManager to class QATQuantizer
+- Check QuantizationBackend not have attr backend_config
 - ...
 
 
-QuantizationBackend not have attr backend_config
+---
+
+- In `QuantizationManager`, move and integrate `compare_accuracy`, `evaluate_accuracy`, `compare_accuracy` to QuantizationMetrics
+- In `QuantizationManager`, move and integrate `create_backend_pattern_config`, `setup_fusion` to `QuantizationBackend`
+- Add new class, `QuantizationAnalyzer`, move/integrates other method/attributes (QuantizationManager: analyze_quantization, get_model_size, visualize_weight_comparison, visualize_quantization_effects, ...) from other classes to this class
+- In `QuantizationManager`, move and integrate `set_custom_qconfig` to `QuantizationConfig`
+- I want to integrate logics relate to "quantization aware training" in QuantizationManager (set_qat_learning_rate, ..) to class QATQuantizer
+
+---
+
+- In `QuantizationManager`, add `profile_model` to  `QuantizationAnalyzer`
+- In `QuantizationManager`, implement `apply_cross_layer_equalization`
+- In `QuantizationManager`, should i move `set_backend_config`, `set_backend` to `QuantizationBackend`?
+- In `QuantizationManager`, shoud i move `quantize_per_channel`, `quantize_dynamic` to `FXQuantization`?
+
+
+- In `QuantizationManager`, add `` to  ``
+- In `QuantizationManager`, add `` to  ``
+- In `QuantizationManager`, add `` to  ``
+
