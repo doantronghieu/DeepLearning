@@ -1,9 +1,11 @@
+# My code starts from here
 # Standard library imports
 import copy
 import io
 import time
 import yaml
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Callable, TypedDict, Union
 
 # Third-party imports
@@ -40,13 +42,12 @@ from torch.utils.data import DataLoader
 from torch._export import capture_pre_autograd_graph
 
 # Local application imports (if any)
-# Add any local imports here
 
 
-# Configuration loading
-def load_config(config_path: str) -> Dict[str, Any]:
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+# Configuration
+@hydra.main(config_path="conf", config_name="config")
+def load_config(cfg: DictConfig) -> Dict[str, Any]:
+    return cfg
 
 # Centralized random seed setting
 def set_random_seed(seed: int):
@@ -97,6 +98,19 @@ class QuantizationBackend:
             raise ValueError("Supported backends are 'x86' and 'qnnpack'")
         self.backend = backend
         torch.backends.quantized.engine = self.backend
+    
+    def set_qconfig_mapping(self, qconfig_mapping: QConfigMapping) -> None:
+        self.qconfig_mapping = qconfig_mapping
+
+    def auto_select_qconfig(self, model: nn.Module, example_inputs: torch.Tensor) -> QConfigMapping:
+        qconfig_mapping = QConfigMapping()
+        for name, module in model.named_modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                if module.in_features < 256:
+                    qconfig_mapping.set_module_name(name, default_per_channel_qconfig)
+                else:
+                    qconfig_mapping.set_module_name(name, default_qconfig)
+        return qconfig_mapping
 
 class QuantizationConfig(TypedDict):
     backend: str
@@ -332,6 +346,36 @@ class QATQuantizer(Quantizer):
             logger.info(f"Epoch {epoch+1}/{num_epochs} completed")
         
         return self.quantize_model(prepared_model)
+
+    def apply_quantization_aware_training(
+        self,
+        model: nn.Module,
+        train_loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        num_epochs: int,
+        device: torch.device
+    ) -> nn.Module:
+        """
+        Apply Quantization-Aware Training (QAT) to the model.
+        """
+        model.train()
+        model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+        model_prepared = torch.quantization.prepare_qat(model)
+
+        for epoch in range(num_epochs):
+            for inputs, targets in train_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                optimizer.zero_grad()
+                outputs = model_prepared(inputs)
+                loss: torch.Tensor = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+
+            logger.info(f"QAT Epoch {epoch + 1}/{num_epochs} completed")
+
+        model_quantized = torch.quantization.convert(model_prepared.eval(), inplace=False)
+        return model_quantized
 class QuantizerFactory:
     @staticmethod
     def create_quantizer(quantization_type: str, config: Dict[str, Any]) -> Quantizer:
@@ -468,6 +512,148 @@ class QuantizationAnalyzer:
 
         logger.info(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         return prof
+    
+    def visualize_quantization_impact(
+        self,
+        float_model: nn.Module,
+        quantized_model: nn.Module,
+        example_input: torch.Tensor
+    ):
+        """
+        Visualize the impact of quantization on model outputs.
+        """
+        float_model.eval()
+        quantized_model.eval()
+
+        with torch.no_grad():
+            float_output = float_model(example_input)
+            quantized_output = quantized_model(example_input)
+
+        plt.figure(figsize=(12, 4))
+        plt.subplot(131)
+        plt.hist(float_output.flatten().numpy(), bins=50, alpha=0.5, label='Float')
+        plt.hist(quantized_output.flatten().numpy(), bins=50, alpha=0.5, label='Quantized')
+        plt.legend()
+        plt.title('Output Distribution')
+
+        plt.subplot(132)
+        diff = (float_output - quantized_output).abs()
+        plt.hist(diff.flatten().numpy(), bins=50)
+        plt.title('Absolute Difference')
+
+        plt.subplot(133)
+        plt.scatter(float_output.flatten().numpy(), quantized_output.flatten().numpy(), alpha=0.1)
+        plt.plot([float_output.min(), float_output.max()], [float_output.min(), float_output.max()], 'r--')
+        plt.xlabel('Float Output')
+        plt.ylabel('Quantized Output')
+        plt.title('Float vs Quantized Output')
+
+        plt.tight_layout()
+        plt.show()
+    
+    @torch.no_grad()
+    def benchmark_quantized_model(
+        self,
+        model: nn.Module,
+        input_shape: Tuple[int, ...],
+        num_runs: int = 100,
+        device: torch.device = torch.device('cpu')
+    ) -> Dict[str, float]:
+        """
+        Benchmark the quantized model's inference time and throughput.
+        """
+        model.eval().to(device)
+        input_tensor = torch.randn(input_shape).to(device)
+
+        # Warm-up
+        for _ in range(10):
+            _ = model(input_tensor)
+
+        # Benchmark
+        start_time = time.time()
+        for _ in range(num_runs):
+            _ = model(input_tensor)
+        end_time = time.time()
+
+        inference_time = (end_time - start_time) / num_runs
+        throughput = 1 / inference_time
+
+        return {
+            'avg_inference_time_ms': inference_time * 1000,
+            'throughput_fps': throughput
+        }
+
+class ModelStorageManagement:
+    @staticmethod
+    def save_quantized_model(model: nn.Module, path: str) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), path)
+        logger.info(f"Saved quantized model to {path}")
+
+    @staticmethod
+    def load_quantized_model(model: nn.Module, path: str) -> nn.Module:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+        model.load_state_dict(torch.load(path))
+        return model
+        
+    @staticmethod
+    def save_scripted_quantized_model(model: nn.Module, path: str) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        scripted_model = torch.jit.script(model)
+        torch.jit.save(scripted_model, path)
+        logger.info(f"Saved scripted quantized model to {path}")
+
+    @staticmethod
+    def load_scripted_quantized_model(path: str) -> torch.jit.ScriptModule:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+        return torch.jit.load(path)
+
+    @staticmethod
+    def export_torchscript(model: nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to TorchScript format.
+        """
+        model.eval()
+        traced_model = torch.jit.trace(model, example_inputs)
+        torch.jit.save(traced_model, path)
+        logger.info(f"Exported TorchScript model to {path}")
+
+    @staticmethod
+    def convert_to_torchscript(model: nn.Module, example_inputs: torch.Tensor) -> torch.jit.ScriptModule:
+        """
+        Convert the quantized model to TorchScript format for mobile deployment.
+        """
+        model.eval()
+        scripted_model = torch.jit.trace(model, example_inputs)
+        return torch.jit.optimize_for_inference(scripted_model)
+
+    @staticmethod
+    def export_onnx(model: nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to ONNX format.
+        """
+        model.eval()
+        torch.onnx.export(model, example_inputs, path, opset_version=13)
+        logger.info(f"Exported ONNX model to {path}")
+
+    @staticmethod
+    def export_quantized_model(model: nn.Module, example_input: torch.Tensor, export_path: str, export_format: str = 'torchscript'):
+        """
+        Export the quantized model to various formats for deployment.
+        """
+        model.eval()
+
+        if export_format == 'torchscript':
+            scripted_model = torch.jit.trace(model, example_input)
+            torch.jit.save(scripted_model, export_path)
+        elif export_format == 'onnx':
+            torch.onnx.export(model, example_input, export_path, opset_version=13)
+        else:
+            raise ValueError(f"Unsupported export format: {export_format}")
+
+        logger.info(f"Exported quantized model to {export_path} in {export_format} format")
 
 class QuantizationManager:
     def __init__(self, cfg: Union[QuantizationConfig, DictConfig]):
@@ -476,6 +662,7 @@ class QuantizationManager:
         self.fx_quantization = FXQuantization()
         self.metrics = QuantizationMetrics()
         self.analyzer = QuantizationAnalyzer()
+        self.model_storage = ModelStorageManagement()
         
         self.qconfig = self.backend.get_default_qconfig()
         self.qat_qconfig = self.backend.get_default_qat_qconfig()
@@ -572,82 +759,6 @@ class QuantizationManager:
         prepared_model = prepare_pt2e(exported_model, self.quantizer)
         return prepared_model
 
-    def auto_select_qconfig(self, model: nn.Module, example_inputs: torch.Tensor) -> QConfigMapping:
-        qconfig_mapping = QConfigMapping()
-        for name, module in model.named_modules():
-            if isinstance(module, (nn.Conv2d, nn.Linear)):
-                if module.in_features < 256:
-                    qconfig_mapping.set_module_name(name, default_per_channel_qconfig)
-                else:
-                    qconfig_mapping.set_module_name(name, default_qconfig)
-        return qconfig_mapping
-
-    def calibrate_model(self, prepared_model: nn.Module, calibration_data: torch.Tensor, num_batches: int = 100) -> None:
-        prepared_model.eval()
-        with torch.no_grad():
-            for i, data in enumerate(calibration_data):
-                if i >= num_batches:
-                    break
-                prepared_model(data)
-                if i % 10 == 0:
-                    logger.info(f"Calibration progress: {i}/{num_batches}")
-
-    def save_quantized_model(self, model: nn.Module, path: str) -> None:
-        if self.use_pt2e:
-            torch.export.save(model, path)
-        else:
-            torch.save(model.state_dict(), path)
-
-    def load_quantized_model(self, model: nn.Module, path: str) -> nn.Module:
-        if self.use_pt2e:
-            return torch.export.load(path)
-        else:
-            model.load_state_dict(torch.load(path))
-            return model
-
-    def save_scripted_quantized_model(self, model: nn.Module, path: str) -> None:
-        scripted_model = torch.jit.script(model)
-        torch.jit.save(scripted_model, path)
-
-    def load_scripted_quantized_model(self, path: str) -> torch.jit.ScriptModule:
-        return torch.jit.load(path)
-
-    def quantize_custom_module(self, module: nn.Module, 
-                               quantization_config: Dict[str, Any]) -> nn.Module:
-        class QuantizedCustomModule(nn.Module):
-            def __init__(self, orig_module: nn.Module, qconfig):
-                super().__init__()
-                self.orig_module = orig_module
-                self.qconfig = qconfig
-                self.weight_fake_quant = qconfig.weight()
-                self.activation_post_process = qconfig.activation()
-
-            def forward(self, x):
-                weight_quant = self.weight_fake_quant(self.orig_module.weight)
-                out = self.orig_module._conv_forward(x, weight_quant, self.orig_module.bias)
-                return self.activation_post_process(out)
-
-        qconfig = QConfig(
-            activation=quantization_config.get('activation', default_observer),
-            weight=quantization_config.get('weight', default_weight_observer)
-        )
-        return QuantizedCustomModule(module, qconfig)
-
-    def set_skip_symbolic_trace_modules(self, module_list: List[str]) -> None:
-        self.skip_symbolic_trace_modules = module_list
-
-    def set_prepare_custom_config(self, config: Dict[str, Any]) -> None:
-        self.prepare_custom_config_dict = config
-
-    def set_convert_custom_config(self, config: Dict[str, Any]) -> None:
-        self.convert_custom_config_dict = config
-
-    def get_qconfig_mapping(self) -> QConfigMapping:
-        return self.qconfig_mapping
-
-    def set_qconfig_mapping(self, qconfig_mapping: QConfigMapping) -> None:
-        self.qconfig_mapping = qconfig_mapping
-
     def fuse_model(self, model: nn.Module) -> nn.Module:
         model.eval()
         model = torch.quantization.fuse_modules(model, self._get_fusable_modules(model))
@@ -661,6 +772,7 @@ class QuantizationManager:
         else:
             raise ValueError(f"Unsupported module type: {type(module)}")
 
+    @torch.jit.script
     def optimize_for_inference(self, model: nn.Module) -> nn.Module:
         """
         Optimize the quantized model for inference.
@@ -670,45 +782,7 @@ class QuantizationManager:
             model = convert_fx(model)
         else:
             model = torch.quantization.convert(model)
-        return torch.jit.script(model)
-
-    def export_torchscript(
-        self, 
-        model: nn.Module, 
-        example_inputs: torch.Tensor, 
-        path: str
-    ):
-        """
-        Export the quantized model to TorchScript format.
-        """
-        model.eval()
-        traced_model = torch.jit.trace(model, example_inputs)
-        torch.jit.save(traced_model, path)
-
-    def convert_to_torchscript(
-        self, 
-        model: nn.Module, 
-        example_inputs: torch.Tensor
-    ) -> torch.jit.ScriptModule:
-        """
-        Convert the quantized model to TorchScript format for mobile deployment.
-        """
-        model.eval()
-        scripted_model = torch.jit.trace(model, example_inputs)
-        return torch.jit.optimize_for_inference(scripted_model)
-
-    def export_onnx(
-        self, 
-        model: nn.Module, 
-        example_inputs: torch.Tensor, 
-        path: str
-    ):
-        """
-        Export the quantized model to ONNX format.
-        """
-        model.eval()
-        torch.onnx.export(model, example_inputs, path, opset_version=13)
-
+        return torch.jit.optimize_for_inference(torch.jit.script(model))
 
     def quantize_embedding(
         self, 
@@ -721,28 +795,21 @@ class QuantizationManager:
         embedding.weight.data = torch.quantize_per_tensor(embedding.weight.data, 1 / 2**(num_bits-1), 0, torch.qint8)
         return embedding
 
-    def apply_cross_layer_equalization(
-        self, 
-        model: nn.Module
-    ) -> nn.Module:
+    def apply_cross_layer_equalization(self, model: nn.Module) -> nn.Module:
         """
         Apply Cross-Layer Equalization (CLE) to improve quantization accuracy.
         """
         def equalize_weights(conv1, bn1, conv2):
-            # Compute the scaling factor
             var_eps = 1e-5
             bn_std = torch.sqrt(bn1.running_var + var_eps)
             scale = (bn1.weight / bn_std).reshape(-1, 1, 1, 1)
             
-            # Scale the weights and biases of conv1
             conv1.weight.data *= scale
             if conv1.bias is not None:
                 conv1.bias.data *= bn1.weight / bn_std
             
-            # Inverse scale the weights of conv2
             conv2.weight.data *= (1 / scale).reshape(1, -1, 1, 1)
             
-            # Set the parameters of BN to identity transformation
             bn1.running_mean.data.zero_()
             bn1.running_var.data.fill_(1.0)
             bn1.weight.data.fill_(1.0)
@@ -756,26 +823,21 @@ class QuantizationManager:
                        isinstance(module[i+2], nn.Conv2d):
                         equalize_weights(module[i], module[i+1], module[i+2])
             
-            # Recursive call for nested modules
             self.apply_cross_layer_equalization(module)
         
         return model
 
-    def apply_bias_correction(
-        self, 
-        model: nn.Module
-    ) -> nn.Module:
+    def apply_bias_correction(self, model: nn.Module) -> nn.Module:
         """
         Apply bias correction to compensate for quantization errors.
         """
         for name, module in model.named_modules():
             if isinstance(module, (nn.Conv2d, nn.Linear)) and module.bias is not None:
-                # This is a simplified bias correction. A more accurate implementation
-                # would involve analyzing the quantization error and adjusting accordingly.
                 module.bias.data += 0.5 * module.weight.data.mean(dim=0)
         return model
 
-    def set_random_seed(self, seed: int):
+    @staticmethod
+    def set_random_seed(seed: int):
         """
         Set random seed for reproducibility.
         """
@@ -818,126 +880,32 @@ class QuantizationManager:
                 prune.remove(module, 'weight')
         return model
 
-    def apply_quantization_aware_training(
-        self,
-        model: nn.Module,
-        train_loader: DataLoader,
-        criterion: nn.Module,
-        optimizer: torch.optim.Optimizer,
-        num_epochs: int,
-        device: torch.device
-    ) -> nn.Module:
-        """
-        Apply Quantization-Aware Training (QAT) to the model.
-        """
-        model.train()
-        model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
-        model_prepared = torch.quantization.prepare_qat(model)
+    def quantize_custom_module(self, module: nn.Module, 
+                               quantization_config: Dict[str, Any]) -> nn.Module:
+        class QuantizedCustomModule(nn.Module):
+            def __init__(self, orig_module: nn.Module, qconfig):
+                super().__init__()
+                self.orig_module = orig_module
+                self.qconfig = qconfig
+                self.weight_fake_quant = qconfig.weight()
+                self.activation_post_process = qconfig.activation()
 
-        for epoch in range(num_epochs):
-            for inputs, targets in train_loader:
-                inputs, targets = inputs.to(device), targets.to(device)
-                optimizer.zero_grad()
-                outputs = model_prepared(inputs)
-                loss: torch.Tensor = criterion(outputs, targets)
-                loss.backward()
-                optimizer.step()
+            def forward(self, x):
+                weight_quant = self.weight_fake_quant(self.orig_module.weight)
+                out = self.orig_module._conv_forward(x, weight_quant, self.orig_module.bias)
+                return self.activation_post_process(out)
 
-            logger.info(f"QAT Epoch {epoch + 1}/{num_epochs} completed")
+        qconfig = QConfig(
+            activation=quantization_config.get('activation', default_observer),
+            weight=quantization_config.get('weight', default_weight_observer)
+        )
+        return QuantizedCustomModule(module, qconfig)
 
-        model_quantized = torch.quantization.convert(model_prepared.eval(), inplace=False)
-        return model_quantized
+    def set_skip_symbolic_trace_modules(self, module_list: List[str]) -> None:
+        self.skip_symbolic_trace_modules = module_list
 
-    def visualize_quantization_impact(
-        self,
-        float_model: nn.Module,
-        quantized_model: nn.Module,
-        example_input: torch.Tensor
-    ):
-        """
-        Visualize the impact of quantization on model outputs.
-        """
-        float_model.eval()
-        quantized_model.eval()
+    def set_prepare_custom_config(self, config: Dict[str, Any]) -> None:
+        self.prepare_custom_config_dict = config
 
-        with torch.no_grad():
-            float_output = float_model(example_input)
-            quantized_output = quantized_model(example_input)
-
-        plt.figure(figsize=(12, 4))
-        plt.subplot(131)
-        plt.hist(float_output.flatten().numpy(), bins=50, alpha=0.5, label='Float')
-        plt.hist(quantized_output.flatten().numpy(), bins=50, alpha=0.5, label='Quantized')
-        plt.legend()
-        plt.title('Output Distribution')
-
-        plt.subplot(132)
-        diff = (float_output - quantized_output).abs()
-        plt.hist(diff.flatten().numpy(), bins=50)
-        plt.title('Absolute Difference')
-
-        plt.subplot(133)
-        plt.scatter(float_output.flatten().numpy(), quantized_output.flatten().numpy(), alpha=0.1)
-        plt.plot([float_output.min(), float_output.max()], [float_output.min(), float_output.max()], 'r--')
-        plt.xlabel('Float Output')
-        plt.ylabel('Quantized Output')
-        plt.title('Float vs Quantized Output')
-
-        plt.tight_layout()
-        plt.show()
-
-    def benchmark_quantized_model(
-        self,
-        model: nn.Module,
-        input_shape: Tuple[int, ...],
-        num_runs: int = 100,
-        device: torch.device = torch.device('cpu')
-    ) -> Dict[str, float]:
-        """
-        Benchmark the quantized model's inference time and throughput.
-        """
-        model.eval().to(device)
-        input_tensor = torch.randn(input_shape).to(device)
-
-        # Warm-up
-        for _ in range(10):
-            _ = model(input_tensor)
-
-        # Benchmark
-        start_time = time.time()
-        with torch.no_grad():
-            for _ in range(num_runs):
-                _ = model(input_tensor)
-        end_time = time.time()
-
-        inference_time = (end_time - start_time) / num_runs
-        throughput = 1 / inference_time
-
-        return {
-            'avg_inference_time_ms': inference_time * 1000,
-            'throughput_fps': throughput
-        }
-
-    def export_quantized_model(
-        self,
-        model: nn.Module,
-        example_input: torch.Tensor,
-        export_path: str,
-        export_format: str = 'torchscript'
-    ):
-        """
-        Export the quantized model to various formats for deployment.
-        """
-        model.eval()
-
-        if export_format == 'torchscript':
-            scripted_model = torch.jit.trace(model, example_input)
-            torch.jit.save(scripted_model, export_path)
-        elif export_format == 'onnx':
-            torch.onnx.export(model, example_input, export_path, opset_version=13)
-        else:
-            raise ValueError(f"Unsupported export format: {export_format}")
-
-        logger.info(f"Exported quantized model to {export_path} in {export_format} format")
-    
-
+    def set_convert_custom_config(self, config: Dict[str, Any]) -> None:
+        self.convert_custom_config_dict = config

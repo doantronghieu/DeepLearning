@@ -23,8 +23,15 @@
 - In `QuantizationManager`, should i move `set_backend_config`, `set_backend` to `QuantizationBackend`?
 - In `QuantizationManager`, shoud i move `quantize_per_channel`, `quantize_dynamic` to `FXQuantization`?
 
+---
 
-- In `QuantizationManager`, add `` to  ``
-- In `QuantizationManager`, add `` to  ``
-- In `QuantizationManager`, add `` to  ``
 
+- Add new class, ModelStorageManagement, and move/integrate any methods from QuantizationManager that in charges of save/load model (save_quantized_model, load_quantized_model, save_scripted_quantized_model, load_scripted_quantized_model, export_torchscript, convert_to_torchscript, export_onnx, export_quantized_model, ...) to this class
+
+---
+
+
+- In `QuantizationManager`, move and integrate `visualize_quantization_impact`, `benchmark_quantized_model` to  `QuantizationAnalyzer`
+- In `QuantizationManager`, move and integrate `apply_quantization_aware_training` to  `QATQuantizer`
+- In `QuantizationManager`, move and integrate `set_qconfig_mapping`, `auto_select_qconfig` to  `QuantizationBackend`
+- 
