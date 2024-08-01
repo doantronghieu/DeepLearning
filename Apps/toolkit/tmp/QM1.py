@@ -49,6 +49,85 @@ from torch._export import capture_pre_autograd_graph
 def load_config(cfg: DictConfig) -> Dict[str, Any]:
     return cfg
 
+# Centralized random seed setting
+def set_random_seed(seed: int):
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+
+class ModelStorageManagement:
+    @staticmethod
+    def save_quantized_model(model: nn.Module, path: str) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), path)
+        logger.info(f"Saved quantized model to {path}")
+
+    @staticmethod
+    def load_quantized_model(model: nn.Module, path: str) -> nn.Module:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+        model.load_state_dict(torch.load(path))
+        return model
+        
+    @staticmethod
+    def save_scripted_quantized_model(model: nn.Module, path: str) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        scripted_model = torch.jit.script(model)
+        torch.jit.save(scripted_model, path)
+        logger.info(f"Saved scripted quantized model to {path}")
+
+    @staticmethod
+    def load_scripted_quantized_model(path: str) -> torch.jit.ScriptModule:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+        return torch.jit.load(path)
+
+    @staticmethod
+    def export_torchscript(model: nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to TorchScript format.
+        """
+        model.eval()
+        traced_model = torch.jit.trace(model, example_inputs)
+        torch.jit.save(traced_model, path)
+        logger.info(f"Exported TorchScript model to {path}")
+
+    @staticmethod
+    def convert_to_torchscript(model: nn.Module, example_inputs: torch.Tensor) -> torch.jit.ScriptModule:
+        """
+        Convert the quantized model to TorchScript format for mobile deployment.
+        """
+        model.eval()
+        scripted_model = torch.jit.trace(model, example_inputs)
+        return torch.jit.optimize_for_inference(scripted_model)
+
+    @staticmethod
+    def export_onnx(model: nn.Module, example_inputs: torch.Tensor, path: str):
+        """
+        Export the quantized model to ONNX format.
+        """
+        model.eval()
+        torch.onnx.export(model, example_inputs, path, opset_version=13)
+        logger.info(f"Exported ONNX model to {path}")
+
+    @staticmethod
+    def export_quantized_model(model: nn.Module, example_input: torch.Tensor, export_path: str, export_format: str = 'torchscript'):
+        """
+        Export the quantized model to various formats for deployment.
+        """
+        model.eval()
+
+        if export_format == 'torchscript':
+            scripted_model = torch.jit.trace(model, example_input)
+            torch.jit.save(scripted_model, export_path)
+        elif export_format == 'onnx':
+            torch.onnx.export(model, example_input, export_path, opset_version=13)
+        else:
+            raise ValueError(f"Unsupported export format: {export_format}")
+
+        logger.info(f"Exported quantized model to {export_path} in {export_format} format")
+
 @dataclass
 class QuantizationConfig(TypedDict):
     backend: str
@@ -65,13 +144,6 @@ class QuantizationConfig(TypedDict):
     skip_symbolic_trace_modules: List[str]
     prepare_custom_config: Dict[str, Any]
     convert_custom_config: Dict[str, Any]
-    
-# Centralized random seed setting
-def set_random_seed(seed: int):
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
 
 class QuantizationBackend:
     def __init__(self, backend: str):
@@ -134,6 +206,34 @@ class QuantizationBackend:
                     qconfig_mapping.set_module_name(name, default_qconfig)
         return qconfig_mapping
 
+class QuantizationMetrics:
+    @staticmethod
+    def compare_accuracy(float_model: nn.Module, quant_model: nn.Module, 
+                         test_data: torch.Tensor, target_data: torch.Tensor,
+                         metric_fn: Callable[[torch.Tensor, torch.Tensor], float]) -> Tuple[float, float]:
+        float_model.eval()
+        quant_model.eval()
+        
+        with torch.no_grad():
+            float_output = float_model(test_data)
+            quant_output = quant_model(test_data)
+        
+        float_accuracy = metric_fn(float_output, target_data)
+        quant_accuracy = metric_fn(quant_output, target_data)
+        
+        return float_accuracy, quant_accuracy
+
+    @staticmethod
+    def evaluate_accuracy(model: nn.Module, input_data: torch.Tensor,
+                          target_data: torch.Tensor, criterion: nn.Module) -> float:
+        model.eval()
+        with torch.no_grad():
+            output = model(input_data)
+            loss: torch.Tensor = criterion(output, target_data)
+            _, predicted = torch.max(output, 1)
+            accuracy = (predicted == target_data).float().mean().item()
+        return accuracy
+
 class FXQuantization:
     @staticmethod
     def prepare_fx(
@@ -195,34 +295,6 @@ class FXQuantization:
         else:
             quantized_model = torch.quantization.quantize_dynamic(model, qconfig_spec=qconfig_mapping)
         return quantized_model
-
-class QuantizationMetrics:
-    @staticmethod
-    def compare_accuracy(float_model: nn.Module, quant_model: nn.Module, 
-                         test_data: torch.Tensor, target_data: torch.Tensor,
-                         metric_fn: Callable[[torch.Tensor, torch.Tensor], float]) -> Tuple[float, float]:
-        float_model.eval()
-        quant_model.eval()
-        
-        with torch.no_grad():
-            float_output = float_model(test_data)
-            quant_output = quant_model(test_data)
-        
-        float_accuracy = metric_fn(float_output, target_data)
-        quant_accuracy = metric_fn(quant_output, target_data)
-        
-        return float_accuracy, quant_accuracy
-
-    @staticmethod
-    def evaluate_accuracy(model: nn.Module, input_data: torch.Tensor,
-                          target_data: torch.Tensor, criterion: nn.Module) -> float:
-        model.eval()
-        with torch.no_grad():
-            output = model(input_data)
-            loss: torch.Tensor = criterion(output, target_data)
-            _, predicted = torch.max(output, 1)
-            accuracy = (predicted == target_data).float().mean().item()
-        return accuracy
 
 class Quantizer(ABC):
     @abstractmethod
@@ -532,78 +604,6 @@ class QuantizationAnalyzer:
 
         logger.info(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         return prof
-    
-class ModelStorageManagement:
-    @staticmethod
-    def save_quantized_model(model: nn.Module, path: str) -> None:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(model.state_dict(), path)
-        logger.info(f"Saved quantized model to {path}")
-
-    @staticmethod
-    def load_quantized_model(model: nn.Module, path: str) -> nn.Module:
-        if not Path(path).exists():
-            raise FileNotFoundError(f"Model file not found: {path}")
-        model.load_state_dict(torch.load(path))
-        return model
-        
-    @staticmethod
-    def save_scripted_quantized_model(model: nn.Module, path: str) -> None:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        scripted_model = torch.jit.script(model)
-        torch.jit.save(scripted_model, path)
-        logger.info(f"Saved scripted quantized model to {path}")
-
-    @staticmethod
-    def load_scripted_quantized_model(path: str) -> torch.jit.ScriptModule:
-        if not Path(path).exists():
-            raise FileNotFoundError(f"Model file not found: {path}")
-        return torch.jit.load(path)
-
-    @staticmethod
-    def export_torchscript(model: nn.Module, example_inputs: torch.Tensor, path: str):
-        """
-        Export the quantized model to TorchScript format.
-        """
-        model.eval()
-        traced_model = torch.jit.trace(model, example_inputs)
-        torch.jit.save(traced_model, path)
-        logger.info(f"Exported TorchScript model to {path}")
-
-    @staticmethod
-    def convert_to_torchscript(model: nn.Module, example_inputs: torch.Tensor) -> torch.jit.ScriptModule:
-        """
-        Convert the quantized model to TorchScript format for mobile deployment.
-        """
-        model.eval()
-        scripted_model = torch.jit.trace(model, example_inputs)
-        return torch.jit.optimize_for_inference(scripted_model)
-
-    @staticmethod
-    def export_onnx(model: nn.Module, example_inputs: torch.Tensor, path: str):
-        """
-        Export the quantized model to ONNX format.
-        """
-        model.eval()
-        torch.onnx.export(model, example_inputs, path, opset_version=13)
-        logger.info(f"Exported ONNX model to {path}")
-
-    @staticmethod
-    def export_quantized_model(model: nn.Module, example_input: torch.Tensor, export_path: str, export_format: str = 'torchscript'):
-        """
-        Export the quantized model to various formats for deployment.
-        """
-        model.eval()
-
-        if export_format == 'torchscript':
-            scripted_model = torch.jit.trace(model, example_input)
-            torch.jit.save(scripted_model, export_path)
-        elif export_format == 'onnx':
-            torch.onnx.export(model, example_input, export_path, opset_version=13)
-        else:
-            raise ValueError(f"Unsupported export format: {export_format}")
-
-        logger.info(f"Exported quantized model to {export_path} in {export_format} format")
 
 class QuantizationManager:
     def __init__(self, cfg: Union[QuantizationConfig, DictConfig]):

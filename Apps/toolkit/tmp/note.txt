@@ -20,5 +20,4 @@
 ---
 
 
-
 - In `QuantizationManager`, move and integrate `apply_knowledge_distillation` to `QATQuantizer`
