@@ -13,9 +13,10 @@ from typing import Dict, Any, Optional, Tuple, List, Callable, TypedDict, Union
 # Third-party imports
 import hydra
 from loguru import logger
+from omegaconf import DictConfig
 import matplotlib.pyplot as plt
 import numpy as np
-from omegaconf import DictConfig
+
 import torch
 import torchvision
 import torch.nn as nn
@@ -714,10 +715,10 @@ class QuantizationManager:
                 backend_config=getattr(self.backend, 'backend_config', None))
 
     def _prepare_eager(self, model: nn.Module) -> nn.Module:
-        model.qconfig = self.qat_qconfig if self.use_qat else self.qconfig
+        model.qconfig = self.qat_qconfig if self.cfg.use_qat else self.qconfig
         propagate_qconfig_(model)
         model = fuse_modules(model, self._get_fusable_modules(model))
-        return prepare_qat(model) if self.use_qat else prepare(model)
+        return prepare_qat(model) if self.cfg.use_qat else prepare(model)
 
     def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
         logger.info("Starting model quantization")
