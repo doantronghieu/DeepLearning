@@ -414,18 +414,20 @@ class QATQuantizer(QuantizerBase):
                                     train_loader: DataLoader,
                                     optimizer: torch.optim.Optimizer,
                                     criterion: nn.Module,
-                                    num_epochs: int) -> nn.Module:
-        prepared_model = self.prepare_model(model, next(iter(train_loader))[0])
+                                    num_epochs: int,
+                                    device: torch.device) -> nn.Module:
+        prepared_model = self.prepare_model(model, next(iter(train_loader))[0]).to(device)
         
         for epoch in range(num_epochs):
             for inputs, targets in train_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
                 outputs = prepared_model(inputs)
-                loss: torch.Tensor = criterion(outputs, targets)
+                loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
             
-            logger.info(f"Epoch {epoch+1}/{num_epochs} completed")
+            logger.info(f"QAT Epoch {epoch+1}/{num_epochs} completed")
         
         return self.quantize_model(prepared_model)
 
@@ -576,11 +578,11 @@ class QuantizationAnalyzer:
 
     @staticmethod
     def visualize_quantization(float_model: nn.Module, quant_model: nn.Module, 
-                            example_inputs: Optional[torch.Tensor] = None, 
-                            plot_type: str = 'both', 
-                            comparison_type: str = 'both'):
+                               example_inputs: Optional[torch.Tensor] = None, 
+                               plot_type: str = 'both', 
+                               comparison_type: str = 'both'):
         def plot_comparison(float_data, quant_data, diff_data, title_prefix):
-            plt.figure(figsize=(12, 4))
+            plt.figure(figsize=(15, 5))
             
             if plot_type in ['distribution', 'both']:
                 plt.subplot(131)
@@ -588,11 +590,15 @@ class QuantizationAnalyzer:
                 plt.hist(quant_data.flatten(), bins=50, alpha=0.5, label='Quant')
                 plt.legend()
                 plt.title(f'{title_prefix} Distribution')
+                plt.xlabel('Values')
+                plt.ylabel('Frequency')
             
             if plot_type in ['difference', 'both']:
                 plt.subplot(132)
                 plt.hist(diff_data.flatten(), bins=50)
                 plt.title(f'{title_prefix} Difference')
+                plt.xlabel('Difference')
+                plt.ylabel('Frequency')
             
             if plot_type in ['scatter', 'both']:
                 plt.subplot(133)
@@ -609,8 +615,8 @@ class QuantizationAnalyzer:
         if comparison_type in ['weights', 'both']:
             for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
                 if isinstance(quant_module, torch.ao.quantization.QuantizedModule):
-                    float_weight = float_module.weight.detach().numpy()
-                    quant_weight = quant_module.weight().dequantize().detach().numpy()
+                    float_weight = float_module.weight.detach().cpu().numpy()
+                    quant_weight = quant_module.weight().dequantize().detach().cpu().numpy()
                     diff_weight = np.abs(float_weight - quant_weight)
                     
                     logger.info(f"Module: {name}")
@@ -627,15 +633,15 @@ class QuantizationAnalyzer:
             quant_model.eval()
             
             with torch.no_grad():
-                float_output = float_model(example_inputs)
-                quant_output = quant_model(example_inputs)
+                float_output = float_model(example_inputs).cpu().numpy()
+                quant_output = quant_model(example_inputs).cpu().numpy()
             
-            diff_output = (float_output - quant_output).abs()
+            diff_output = np.abs(float_output - quant_output)
             
-            logger.info(f"Output - Max absolute difference: {diff_output.max().item()}")
-            logger.info(f"Output - Mean absolute difference: {diff_output.mean().item()}")
+            logger.info(f"Output - Max absolute difference: {diff_output.max()}")
+            logger.info(f"Output - Mean absolute difference: {diff_output.mean()}")
             
-            plot_comparison(float_output.numpy(), quant_output.numpy(), diff_output.numpy(), 'Outputs')
+            plot_comparison(float_output, quant_output, diff_output, 'Outputs')
     
     @staticmethod
     def profile_model(model: nn.Module, input_data: torch.Tensor, num_runs: int = 100):
@@ -663,9 +669,10 @@ class QuantizationAnalyzer:
 
 class QuantizationManager:
     def __init__(self, cfg: Union[QuantizationConfig, DictConfig]):
-        self.cfg = cfg
-        self.backend = QuantizationBackendFactory.create_backend(cfg.backend)
-        self.quantizer = QuantizerFactory.create_quantizer(cfg, self.backend)
+        self.cfg = cfg if isinstance(cfg, QuantizationConfig) else QuantizationConfig(**cfg)
+        
+        self.backend = QuantizationBackendFactory.create_backend(self.cfg.backend)
+        self.quantizer = QuantizerFactory.create_quantizer(self.cfg, self.backend)
         
         self.fx_quantization = FXQuantization()
         self.metrics = QuantizationMetrics()
@@ -676,33 +683,17 @@ class QuantizationManager:
         self.qat_qconfig = self.backend.get_default_qat_qconfig()
         self.qconfig_mapping = self.backend.get_qconfig_mapping()
 
-        self.skip_symbolic_trace_modules = cfg.skip_symbolic_trace_modules
-        self.prepare_custom_config_dict = cfg.prepare_custom_config
-        self.convert_custom_config_dict = cfg.convert_custom_config
+        self.use_pt2e = False
         
-        self.use_fx_graph_mode = cfg.use_fx_graph_mode
-        self.use_dynamic_quantization = cfg.use_dynamic_quantization
-        self.use_static_quantization = cfg.use_static_quantization
-        
-        self._use_custom_module_handling = cfg.use_custom_module_handling
-        self._use_enhanced_benchmarking = cfg.use_enhanced_benchmarking
-        
-        self.quantizer = None
-
         logger.add(cfg.log_file, rotation="500 MB")
-
-    @hydra.main(config_path="conf", config_name="config")
-    def use_pretrained_quantized_model(self, model_name: str) -> nn.Module:
-        if not hasattr(torchvision.models.quantization, model_name):
-            raise ValueError(f"Quantized model {model_name} not available in torchvision")
-        
-        return getattr(torchvision.models.quantization, model_name)(pretrained=True, quantize=True)
 
     def prepare_model(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
         if self.cfg.use_fx_graph_mode:
             return self._prepare_fx(model, example_inputs)
+        elif self.use_pt2e:
+            return self._prepare_pt2e(model, example_inputs, self.cfg.use_qat)
         else:
-            return self.quantizer.prepare_model(model, example_inputs)
+            return self._prepare_eager(model)
     
     def _prepare_fx(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
         if self.cfg.use_qat:
@@ -719,14 +710,21 @@ class QuantizationManager:
         propagate_qconfig_(model)
         model = fuse_modules(model, self._get_fusable_modules(model))
         return prepare_qat(model) if self.cfg.use_qat else prepare(model)
+    
+    def _prepare_pt2e(self, model: nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> nn.Module:
+        exported_model = capture_pre_autograd_graph(model, example_inputs)
+        prepared_model = prepare_pt2e(exported_model, self.quantizer)
+        return prepared_model
+
 
     def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
         logger.info("Starting model quantization")
         
         if self.cfg.use_fx_graph_mode:
             return self.fx_quantization.convert_fx(prepared_model, 
-                                                   convert_custom_config_dict=self.cfg.convert_custom_config,
-                                                   backend_config=getattr(self.backend, 'backend_config', None))
+                                                   convert_custom_config_dict=self.cfg.convert_custom_config)
+        elif self.use_pt2e:
+            return convert_pt2e(prepared_model)
         else:
             return self.quantizer.quantize_model(prepared_model)
 
@@ -756,11 +754,6 @@ class QuantizationManager:
         self.use_pt2e = enable
         if enable:
             self.quantizer = self.backend.create_backend_quantizer()
-
-    def _prepare_pt2e(self, model: nn.Module, example_inputs: torch.Tensor, is_qat: bool) -> nn.Module:
-        exported_model = capture_pre_autograd_graph(model, example_inputs)
-        prepared_model = prepare_pt2e(exported_model, self.quantizer)
-        return prepared_model
 
     def fuse_model(self, model: nn.Module) -> nn.Module:
         model.eval()
@@ -885,12 +878,3 @@ class QuantizationManager:
             weight=quantization_config.get('weight', default_weight_observer)
         )
         return QuantizedCustomModule(module, qconfig)
-
-    def set_skip_symbolic_trace_modules(self, module_list: List[str]) -> None:
-        self.skip_symbolic_trace_modules = module_list
-
-    def set_prepare_custom_config(self, config: Dict[str, Any]) -> None:
-        self.prepare_custom_config_dict = config
-
-    def set_convert_custom_config(self, config: Dict[str, Any]) -> None:
-        self.convert_custom_config_dict = config
