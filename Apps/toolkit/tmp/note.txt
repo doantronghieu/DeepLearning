@@ -1,37 +1,24 @@
-- I want to outsource logics relate to backend management in QuantizationManager to a new class: QuantizationBackend
-- I want to outsource logics relate to "fx" in QuantizationManager to a new class
-- I want to outsource logics relate to metric calculating in QuantizationManager to a new class
-- I want to integrate logics relate to "dynamic quantization" in QuantizationManager to class DynamicQuantizer
-- I want to integrate logics relate to "static quantization" in QuantizationManager to class StaticQuantizer
-- I want to integrate logics relate to "quantization aware training" in QuantizationManager to class QATQuantizer
-- Check QuantizationBackend not have attr backend_config
-- ...
+- I want to outsource logic related to `` in `` to a new class: ``
+- I want to integrate logic related to `` in `` into the class ``
+- In ``, add `` to ``
+- In ``, implement ``
+- In ``, should I move `` to ``?
+- Add a new class, ``, and move and integrate other methods/attributes (...) from other classes to this class
+- Add a new class, ``, and also move and integrate any methods from the class `` that are in charge of `` (``) to this class
+- In ``, move and integrate `` to ``
+
+---
+
+`QuantizationManager`
+`QuantizationMetrics`
+`DynamicQuantizer`
+`QuantizationBackend`
+`QuantizationConfig`
+`QATQuantizer`
 
 
 ---
 
-- In `QuantizationManager`, move and integrate `compare_accuracy`, `evaluate_accuracy`, `compare_accuracy` to QuantizationMetrics
-- In `QuantizationManager`, move and integrate `create_backend_pattern_config`, `setup_fusion` to `QuantizationBackend`
-- Add new class, `QuantizationAnalyzer`, move/integrates other method/attributes (QuantizationManager: analyze_quantization, get_model_size, visualize_weight_comparison, visualize_quantization_effects, ...) from other classes to this class
-- In `QuantizationManager`, move and integrate `set_custom_qconfig` to `QuantizationConfig`
-- I want to integrate logics relate to "quantization aware training" in QuantizationManager (set_qat_learning_rate, ..) to class QATQuantizer
-
----
-
-- In `QuantizationManager`, add `profile_model` to  `QuantizationAnalyzer`
-- In `QuantizationManager`, implement `apply_cross_layer_equalization`
-- In `QuantizationManager`, should i move `set_backend_config`, `set_backend` to `QuantizationBackend`?
-- In `QuantizationManager`, shoud i move `quantize_per_channel`, `quantize_dynamic` to `FXQuantization`?
-
----
 
 
-- Add new class, ModelStorageManagement, and move/integrate any methods from QuantizationManager that in charges of save/load model (save_quantized_model, load_quantized_model, save_scripted_quantized_model, load_scripted_quantized_model, export_torchscript, convert_to_torchscript, export_onnx, export_quantized_model, ...) to this class
-
----
-
-
-- In `QuantizationManager`, move and integrate `visualize_quantization_impact`, `benchmark_quantized_model` to  `QuantizationAnalyzer`
-- In `QuantizationManager`, move and integrate `apply_quantization_aware_training` to  `QATQuantizer`
-- In `QuantizationManager`, move and integrate `set_qconfig_mapping`, `auto_select_qconfig` to  `QuantizationBackend`
-- 
+- In `QuantizationManager`, move and integrate `apply_knowledge_distillation` to `QATQuantizer`

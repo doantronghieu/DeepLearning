@@ -5,6 +5,7 @@ import io
 import time
 import yaml
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Callable, TypedDict, Union
 
@@ -43,12 +44,28 @@ from torch._export import capture_pre_autograd_graph
 
 # Local application imports (if any)
 
-
 # Configuration
 @hydra.main(config_path="conf", config_name="config")
 def load_config(cfg: DictConfig) -> Dict[str, Any]:
     return cfg
 
+@dataclass
+class QuantizationConfig(TypedDict):
+    backend: str
+    use_backend_config: bool
+    use_pt2e: bool
+    use_xnnpack: bool
+    use_fx_graph_mode: bool
+    use_dynamic_quantization: bool
+    use_static_quantization: bool
+    use_qat: bool
+    use_custom_module_handling: bool
+    use_enhanced_benchmarking: bool
+    log_file: str
+    skip_symbolic_trace_modules: List[str]
+    prepare_custom_config: Dict[str, Any]
+    convert_custom_config: Dict[str, Any]
+    
 # Centralized random seed setting
 def set_random_seed(seed: int):
     torch.manual_seed(seed)
@@ -80,22 +97,27 @@ class QuantizationBackend:
             return quantizer
         return None
     
-    def create_backend_pattern_config(self, pattern, observation_type, dtype_config) -> BackendPatternConfig:
+    def create_backend_pattern_config(self, pattern: str, observation_type: str, dtype_config: Dict[str, torch.dtype]) -> BackendPatternConfig:
         return BackendPatternConfig(pattern) \
             .set_observation_type(observation_type) \
             .add_dtype_config(dtype_config)
 
-    def setup_fusion(self, pattern, fused_module, fuser_method) -> BackendPatternConfig:
+    def setup_fusion(self, pattern: str, fused_module: nn.Module, fuser_method: callable) -> BackendPatternConfig:
         return BackendPatternConfig(pattern) \
             .set_fused_module(fused_module) \
             .set_fuser_method(fuser_method)
 
+    def set_custom_qconfig(self, qconfig: QConfig) -> None:
+        self.qconfig = qconfig
+        self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
+    
     def set_backend_config(self, backend_config: BackendConfig) -> None:
         self.backend_config = backend_config
 
     def set_backend(self, backend: str) -> None:
-        if backend not in ['x86', 'qnnpack']:
-            raise ValueError("Supported backends are 'x86' and 'qnnpack'")
+        supported_backends = ['x86', 'qnnpack', 'onednn', 'xnnpack']
+        if backend not in supported_backends:
+            raise ValueError(f"Supported backends are {', '.join(supported_backends)}")
         self.backend = backend
         torch.backends.quantized.engine = self.backend
     
@@ -111,26 +133,6 @@ class QuantizationBackend:
                 else:
                     qconfig_mapping.set_module_name(name, default_qconfig)
         return qconfig_mapping
-
-class QuantizationConfig(TypedDict):
-    backend: str
-    use_backend_config: bool
-    use_pt2e: bool
-    use_xnnpack: bool
-    use_fx_graph_mode: bool
-    use_dynamic_quantization: bool
-    use_static_quantization: bool
-    use_qat: bool
-    use_custom_module_handling: bool
-    use_enhanced_benchmarking: bool
-    log_file: str
-    skip_symbolic_trace_modules: List[str]
-    prepare_custom_config: Dict[str, Any]
-    convert_custom_config: Dict[str, Any]
-    
-    def set_custom_qconfig(self, qconfig: QConfig) -> None:
-        self.qconfig = qconfig
-        self.qconfig_mapping = QConfigMapping().set_global(self.qconfig)
 
 class FXQuantization:
     @staticmethod
@@ -193,54 +195,8 @@ class FXQuantization:
         else:
             quantized_model = torch.quantization.quantize_dynamic(model, qconfig_spec=qconfig_mapping)
         return quantized_model
+
 class QuantizationMetrics:
-    @staticmethod
-    def get_memory_footprint(model: nn.Module) -> float:
-        mem_params = sum([param.nelement()*param.element_size() for param in model.parameters()])
-        mem_bufs = sum([buf.nelement()*buf.element_size() for buf in model.buffers()])
-        mem_total = mem_params + mem_bufs
-        return mem_total / (1024 * 1024)  # Convert to MB
-
-    @staticmethod
-    def compare_models(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
-        comparison = {
-            'param_count1': sum(p.numel() for p in model1.parameters()),
-            'param_count2': sum(p.numel() for p in model2.parameters()),
-            'memory_footprint1': QuantizationMetrics.get_memory_footprint(model1),
-            'memory_footprint2': QuantizationMetrics.get_memory_footprint(model2),
-        }
-        
-        comparison['param_count_diff'] = comparison['param_count1'] - comparison['param_count2']
-        comparison['memory_footprint_diff'] = comparison['memory_footprint1'] - comparison['memory_footprint2']
-        comparison['memory_reduction_percent'] = (1 - comparison['memory_footprint2'] / comparison['memory_footprint1']) * 100
-        
-        return comparison
-
-    @staticmethod
-    def benchmark_model(model: nn.Module, input_data: torch.Tensor, num_runs: int = 100) -> Dict[str, float]:
-        model.eval()
-        device = next(model.parameters()).device
-        input_data = input_data.to(device)
-
-        # Warmup
-        for _ in range(10):
-            _ = model(input_data)
-
-        # Benchmark
-        start_time = time.time()
-        with torch.no_grad():
-            for _ in range(num_runs):
-                _ = model(input_data)
-        end_time = time.time()
-
-        avg_time = (end_time - start_time) / num_runs
-        throughput = 1 / avg_time  # inferences per second
-
-        return {
-            'avg_inference_time': avg_time * 1000,  # ms
-            'throughput': throughput,
-        }
-    
     @staticmethod
     def compare_accuracy(float_model: nn.Module, quant_model: nn.Module, 
                          test_data: torch.Tensor, target_data: torch.Tensor,
@@ -376,6 +332,24 @@ class QATQuantizer(Quantizer):
 
         model_quantized = torch.quantization.convert(model_prepared.eval(), inplace=False)
         return model_quantized
+    
+    def apply_knowledge_distillation(
+        self, 
+        student_model: nn.Module, 
+        teacher_model: nn.Module,
+        alpha: float = 0.5, 
+        temperature: float = 2.0
+    ) -> Callable:
+        """
+        Apply knowledge distillation during quantization-aware training.
+        """
+        def distillation_loss(student_outputs, teacher_outputs, targets, criterion):
+            hard_loss = criterion(student_outputs, targets)
+            soft_loss = nn.KLDivLoss()(F.log_softmax(student_outputs / temperature, dim=1),
+                                       F.softmax(teacher_outputs / temperature, dim=1))
+            return (1 - alpha) * hard_loss + alpha * soft_loss * (temperature ** 2)
+        
+        return distillation_loss
 class QuantizerFactory:
     @staticmethod
     def create_quantizer(quantization_type: str, config: Dict[str, Any]) -> Quantizer:
@@ -389,6 +363,63 @@ class QuantizerFactory:
             raise ValueError(f"Unsupported quantization type: {quantization_type}")
 
 class QuantizationAnalyzer:
+    def __init__(self) -> None:
+        pass
+    
+    def get_memory_footprint(self, model: nn.Module) -> float:
+        mem_params = sum([param.nelement()*param.element_size() for param in model.parameters()])
+        mem_bufs = sum([buf.nelement()*buf.element_size() for buf in model.buffers()])
+        mem_total = mem_params + mem_bufs
+        return mem_total / (1024 * 1024)  # Convert to MB
+
+    @staticmethod
+    def get_model_size(model: nn.Module) -> float:
+        buffer = io.BytesIO()
+        torch.save(model.state_dict(), buffer)
+        size = buffer.getbuffer().nbytes / 1e6  # Size in MB
+        return size
+
+    def compare_models(self, model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+        comparison = {
+            'param_count1': sum(p.numel() for p in model1.parameters()),
+            'param_count2': sum(p.numel() for p in model2.parameters()),
+            'memory_footprint1': self.get_memory_footprint(model1),
+            'memory_footprint2': self.get_memory_footprint(model2),
+        }
+        
+        comparison['param_count_diff'] = comparison['param_count1'] - comparison['param_count2']
+        comparison['memory_footprint_diff'] = comparison['memory_footprint1'] - comparison['memory_footprint2']
+        comparison['memory_reduction_percent'] = (1 - comparison['memory_footprint2'] / comparison['memory_footprint1']) * 100
+        
+        return comparison
+
+    @staticmethod
+    def benchmark_model(model: nn.Module, input_data: torch.Tensor, num_runs: int = 100, device: Optional[torch.device] = None) -> Dict[str, float]:
+        model.eval()
+        if device is None:
+            device = next(model.parameters()).device
+        input_data = input_data.to(device)
+        model = model.to(device)
+
+        # Warmup
+        for _ in range(10):
+            _ = model(input_data)
+
+        # Benchmark
+        start_time = time.time()
+        with torch.no_grad():
+            for _ in range(num_runs):
+                _ = model(input_data)
+        end_time = time.time()
+
+        avg_time = (end_time - start_time) / num_runs
+        throughput = 1 / avg_time  # inferences per second
+
+        return {
+            'avg_inference_time_ms': avg_time * 1000,
+            'throughput_fps': throughput,
+        }
+
     @staticmethod
     def analyze_quantization(float_model: nn.Module, quant_model: nn.Module,
                              example_inputs: torch.Tensor) -> Dict[str, Any]:
@@ -416,78 +447,67 @@ class QuantizationAnalyzer:
         return analysis
 
     @staticmethod
-    def get_model_size(model: nn.Module) -> float:
-        buffer = io.BytesIO()
-        torch.save(model.state_dict(), buffer)
-        size = buffer.getbuffer().nbytes / 1e6  # Size in MB
-        return size
-
-    @staticmethod
-    def visualize_weight_comparison(float_model: nn.Module, quant_model: nn.Module):
-        for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
-            if isinstance(quant_module, torch.ao.quantization.QuantizedModule):
-                float_weight = float_module.weight.detach().numpy()
-                quant_weight = quant_module.weight().dequantize().detach().numpy()
-                
-                logger.info(f"Module: {name}")
-                logger.info(f"Max absolute difference: {np.abs(float_weight - quant_weight).max()}")
-                logger.info(f"Mean absolute difference: {np.abs(float_weight - quant_weight).mean()}")
-                
-                plt.figure(figsize=(12, 4))
+    def visualize_quantization(float_model: nn.Module, quant_model: nn.Module, 
+                            example_inputs: Optional[torch.Tensor] = None, 
+                            plot_type: str = 'both', 
+                            comparison_type: str = 'both'):
+        def plot_comparison(float_data, quant_data, diff_data, title_prefix):
+            plt.figure(figsize=(12, 4))
+            
+            if plot_type in ['distribution', 'both']:
                 plt.subplot(131)
-                plt.hist(float_weight.flatten(), bins=50, alpha=0.5, label='Float')
-                plt.hist(quant_weight.flatten(), bins=50, alpha=0.5, label='Quant')
+                plt.hist(float_data.flatten(), bins=50, alpha=0.5, label='Float')
+                plt.hist(quant_data.flatten(), bins=50, alpha=0.5, label='Quant')
                 plt.legend()
-                plt.title('Weight Distribution')
-                
+                plt.title(f'{title_prefix} Distribution')
+            
+            if plot_type in ['difference', 'both']:
                 plt.subplot(132)
-                plt.hist((float_weight - quant_weight).flatten(), bins=50)
-                plt.title('Weight Difference')
-                
+                plt.hist(diff_data.flatten(), bins=50)
+                plt.title(f'{title_prefix} Difference')
+            
+            if plot_type in ['scatter', 'both']:
                 plt.subplot(133)
-                plt.scatter(float_weight.flatten(), quant_weight.flatten(), alpha=0.1)
-                plt.plot([-1, 1], [-1, 1], 'r--')
-                plt.xlabel('Float Weights')
-                plt.ylabel('Quant Weights')
-                plt.title('Float vs Quant Weights')
-                
-                plt.tight_layout()
-                plt.show()
+                plt.scatter(float_data.flatten(), quant_data.flatten(), alpha=0.1)
+                plt.plot([float_data.min(), float_data.max()], 
+                        [float_data.min(), float_data.max()], 'r--')
+                plt.xlabel(f'Float {title_prefix}')
+                plt.ylabel(f'Quant {title_prefix}')
+                plt.title(f'Float vs Quant {title_prefix}')
+            
+            plt.tight_layout()
+            plt.show()
 
-    @staticmethod
-    def visualize_quantization_effects(float_model: nn.Module, quant_model: nn.Module, example_inputs: torch.Tensor):
-        float_model.eval()
-        quant_model.eval()
-        
-        with torch.no_grad():
-            float_output = float_model(example_inputs)
-            quant_output = quant_model(example_inputs)
-        
-        diff = (float_output - quant_output).abs()
-        
-        logger.info(f"Max absolute difference: {diff.max().item()}")
-        logger.info(f"Mean absolute difference: {diff.mean().item()}")
-        
-        plt.figure(figsize=(12, 4))
-        plt.subplot(131)
-        plt.hist(float_output.flatten().numpy(), bins=50, alpha=0.5, label='Float')
-        plt.hist(quant_output.flatten().numpy(), bins=50, alpha=0.5, label='Quant')
-        plt.legend()
-        plt.title('Output Distribution')
-        
-        plt.subplot(132)
-        plt.hist(diff.flatten().numpy(), bins=50)
-        plt.title('Output Difference')
-        
-        plt.subplot(133)
-        plt.scatter(float_output.flatten().numpy(), quant_output.flatten().numpy(), alpha=0.1)
-        plt.plot([-1, 1], [-1, 1], 'r--')
-        plt.xlabel('Float Outputs')
-        plt.ylabel('Quant Outputs')
-        plt.title('Float vs Quant Outputs')
-        
-        plt.tight_layout()
-        plt.show()
+        if comparison_type in ['weights', 'both']:
+            for (name, float_module), (_, quant_module) in zip(float_model.named_modules(), quant_model.named_modules()):
+                if isinstance(quant_module, torch.ao.quantization.QuantizedModule):
+                    float_weight = float_module.weight.detach().numpy()
+                    quant_weight = quant_module.weight().dequantize().detach().numpy()
+                    diff_weight = np.abs(float_weight - quant_weight)
+                    
+                    logger.info(f"Module: {name}")
+                    logger.info(f"Max absolute difference: {diff_weight.max()}")
+                    logger.info(f"Mean absolute difference: {diff_weight.mean()}")
+                    
+                    plot_comparison(float_weight, quant_weight, diff_weight, f'Weights ({name})')
+
+        if comparison_type in ['outputs', 'both']:
+            if example_inputs is None:
+                raise ValueError("example_inputs must be provided for output comparison")
+            
+            float_model.eval()
+            quant_model.eval()
+            
+            with torch.no_grad():
+                float_output = float_model(example_inputs)
+                quant_output = quant_model(example_inputs)
+            
+            diff_output = (float_output - quant_output).abs()
+            
+            logger.info(f"Output - Max absolute difference: {diff_output.max().item()}")
+            logger.info(f"Output - Mean absolute difference: {diff_output.mean().item()}")
+            
+            plot_comparison(float_output.numpy(), quant_output.numpy(), diff_output.numpy(), 'Outputs')
     
     @staticmethod
     def profile_model(model: nn.Module, input_data: torch.Tensor, num_runs: int = 100):
@@ -513,76 +533,6 @@ class QuantizationAnalyzer:
         logger.info(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         return prof
     
-    def visualize_quantization_impact(
-        self,
-        float_model: nn.Module,
-        quantized_model: nn.Module,
-        example_input: torch.Tensor
-    ):
-        """
-        Visualize the impact of quantization on model outputs.
-        """
-        float_model.eval()
-        quantized_model.eval()
-
-        with torch.no_grad():
-            float_output = float_model(example_input)
-            quantized_output = quantized_model(example_input)
-
-        plt.figure(figsize=(12, 4))
-        plt.subplot(131)
-        plt.hist(float_output.flatten().numpy(), bins=50, alpha=0.5, label='Float')
-        plt.hist(quantized_output.flatten().numpy(), bins=50, alpha=0.5, label='Quantized')
-        plt.legend()
-        plt.title('Output Distribution')
-
-        plt.subplot(132)
-        diff = (float_output - quantized_output).abs()
-        plt.hist(diff.flatten().numpy(), bins=50)
-        plt.title('Absolute Difference')
-
-        plt.subplot(133)
-        plt.scatter(float_output.flatten().numpy(), quantized_output.flatten().numpy(), alpha=0.1)
-        plt.plot([float_output.min(), float_output.max()], [float_output.min(), float_output.max()], 'r--')
-        plt.xlabel('Float Output')
-        plt.ylabel('Quantized Output')
-        plt.title('Float vs Quantized Output')
-
-        plt.tight_layout()
-        plt.show()
-    
-    @torch.no_grad()
-    def benchmark_quantized_model(
-        self,
-        model: nn.Module,
-        input_shape: Tuple[int, ...],
-        num_runs: int = 100,
-        device: torch.device = torch.device('cpu')
-    ) -> Dict[str, float]:
-        """
-        Benchmark the quantized model's inference time and throughput.
-        """
-        model.eval().to(device)
-        input_tensor = torch.randn(input_shape).to(device)
-
-        # Warm-up
-        for _ in range(10):
-            _ = model(input_tensor)
-
-        # Benchmark
-        start_time = time.time()
-        for _ in range(num_runs):
-            _ = model(input_tensor)
-        end_time = time.time()
-
-        inference_time = (end_time - start_time) / num_runs
-        throughput = 1 / inference_time
-
-        return {
-            'avg_inference_time_ms': inference_time * 1000,
-            'throughput_fps': throughput
-        }
-
 class ModelStorageManagement:
     @staticmethod
     def save_quantized_model(model: nn.Module, path: str) -> None:
@@ -851,24 +801,6 @@ class QuantizationManager:
         Create a learning rate scheduler for quantization-aware training.
         """
         return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
-    def apply_knowledge_distillation(
-        self, 
-        student_model: nn.Module, 
-        teacher_model: nn.Module, 
-        alpha: float = 0.5, 
-        temperature: float = 2.0
-    ) -> Callable:
-        """
-        Apply knowledge distillation during quantization-aware training.
-        """
-        def distillation_loss(student_outputs, teacher_outputs, targets, criterion):
-            hard_loss: torch.Tensor = criterion(student_outputs, targets)
-            soft_loss = nn.KLDivLoss()(F.log_softmax(student_outputs / temperature, dim=1),
-                                       F.softmax(teacher_outputs / temperature, dim=1))
-            return (1 - alpha) * hard_loss + alpha * soft_loss * (temperature ** 2)
-        
-        return distillation_loss
 
     def apply_pruning(self, model: nn.Module, amount: float = 0.5) -> nn.Module:
         """
