@@ -139,7 +139,66 @@ class QuantizationConfig(BaseModel):
     prepare_custom_config: Dict[str, Any] = Field(default_factory=dict, description="Custom configuration for prepare step")
     convert_custom_config: Dict[str, Any] = Field(default_factory=dict, description="Custom configuration for convert step")
     log_file: str = Field("quantization.log", description="Log file path")
+    use_custom_module_handling: bool = Field(False, description="Use custom module handling")
+    use_enhanced_benchmarking: bool = Field(False, description="Use enhanced benchmarking")
 
+class QuantizationBackendBase(ABC):
+    @abstractmethod
+    def get_default_qconfig(self) -> QConfig:
+        pass
+
+    @abstractmethod
+    def get_default_qat_qconfig(self) -> QConfig:
+        pass
+
+    @abstractmethod
+    def get_qconfig_mapping(self) -> QConfigMapping:
+        pass
+
+    @abstractmethod
+    def create_backend_quantizer(self) -> Optional[Any]:
+        pass
+
+class X86QuantizationBackend(QuantizationBackendBase):
+    def get_default_qconfig(self) -> QConfig:
+        return get_default_qconfig('x86')
+
+    def get_default_qat_qconfig(self) -> QConfig:
+        return get_default_qat_qconfig('x86')
+
+    def get_qconfig_mapping(self) -> QConfigMapping:
+        return get_default_qconfig_mapping('x86')
+
+    def create_backend_quantizer(self) -> Optional[Any]:
+        return None
+
+class XNNPACKQuantizationBackend(QuantizationBackendBase):
+    def get_default_qconfig(self) -> QConfig:
+        return get_default_qconfig('xnnpack')
+
+    def get_default_qat_qconfig(self) -> QConfig:
+        return get_default_qat_qconfig('xnnpack')
+
+    def get_qconfig_mapping(self) -> QConfigMapping:
+        return QConfigMapping().set_global(self.get_default_qconfig())
+
+    def create_backend_quantizer(self) -> Optional[XNNPACKQuantizer]:
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config())
+        return quantizer
+
+# Factory for creating quantization backends
+class QuantizationBackendFactory:
+    @staticmethod
+    def create_backend(backend: str) -> QuantizationBackendBase:
+        if backend == 'x86':
+            return X86QuantizationBackend()
+        elif backend == 'xnnpack':
+            return XNNPACKQuantizationBackend()
+        else:
+            raise ValueError(f"Unsupported backend: {backend}")
+
+###
 class QuantizationBackend:
     def __init__(self, backend: str):
         self.backend = backend
@@ -228,7 +287,6 @@ class QuantizationMetrics:
             _, predicted = torch.max(output, 1)
             accuracy = (predicted == target_data).float().mean().item()
         return accuracy
-
 class FXQuantization:
     @staticmethod
     def prepare_fx(
@@ -293,7 +351,7 @@ class FXQuantization:
 
 class QuantizerBase(ABC):
     @abstractmethod
-    def prepare_model(self, model: nn.Module) -> nn.Module:
+    def prepare_model(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
         pass
 
     @abstractmethod
@@ -418,16 +476,28 @@ class QATQuantizer(QuantizerBase):
         
         return distillation_loss
 
+# Factory for creating quantizers
+class QuantizerFactory:
+    @staticmethod
+    def create_quantizer(config: QuantizationConfig, backend: QuantizationBackendBase) -> QuantizerBase:
+        if config.use_dynamic_quantization:
+            return DynamicQuantizer({nn.Linear: torch.quantization.default_dynamic_qconfig})
+        elif config.use_qat:
+            return QATQuantizer(backend.get_default_qat_qconfig())
+        else:
+            return StaticQuantizer(backend.get_default_qconfig())
+
 class QuantizationAnalyzer:
     def __init__(self) -> None:
         pass
     
-    def get_memory_footprint(self, model: nn.Module) -> float:
+    @staticmethod
+    def get_memory_footprint(model: nn.Module) -> float:
         mem_params = sum([param.nelement()*param.element_size() for param in model.parameters()])
         mem_bufs = sum([buf.nelement()*buf.element_size() for buf in model.buffers()])
         mem_total = mem_params + mem_bufs
         return mem_total / (1024 * 1024)  # Convert to MB
-
+    
     @staticmethod
     def get_model_size(model: nn.Module) -> float:
         buffer = io.BytesIO()
@@ -435,12 +505,13 @@ class QuantizationAnalyzer:
         size = buffer.getbuffer().nbytes / 1e6  # Size in MB
         return size
 
-    def compare_models(self, model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+    @staticmethod
+    def compare_models(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
         comparison = {
             'param_count1': sum(p.numel() for p in model1.parameters()),
             'param_count2': sum(p.numel() for p in model2.parameters()),
-            'memory_footprint1': self.get_memory_footprint(model1),
-            'memory_footprint2': self.get_memory_footprint(model2),
+            'memory_footprint1': QuantizationAnalyzer.get_memory_footprint(model1),
+            'memory_footprint2': QuantizationAnalyzer.get_memory_footprint(model2),
         }
         
         comparison['param_count_diff'] = comparison['param_count1'] - comparison['param_count2']
@@ -592,7 +663,9 @@ class QuantizationAnalyzer:
 class QuantizationManager:
     def __init__(self, cfg: Union[QuantizationConfig, DictConfig]):
         self.cfg = cfg
-        self.backend = QuantizationBackend(cfg.backend)
+        self.backend = QuantizationBackendFactory.create_backend(cfg.backend)
+        self.quantizer = QuantizerFactory.create_quantizer(cfg, self.backend)
+        
         self.fx_quantization = FXQuantization()
         self.metrics = QuantizationMetrics()
         self.analyzer = QuantizationAnalyzer()
@@ -609,7 +682,6 @@ class QuantizationManager:
         self.use_fx_graph_mode = cfg.use_fx_graph_mode
         self.use_dynamic_quantization = cfg.use_dynamic_quantization
         self.use_static_quantization = cfg.use_static_quantization
-        self.use_qat = cfg.use_qat
         
         self._use_custom_module_handling = cfg.use_custom_module_handling
         self._use_enhanced_benchmarking = cfg.use_enhanced_benchmarking
@@ -618,14 +690,6 @@ class QuantizationManager:
 
         logger.add(cfg.log_file, rotation="500 MB")
 
-    def create_quantizer(self):
-        if self.cfg.use_dynamic_quantization:
-            return DynamicQuantizer({nn.Linear: torch.quantization.default_dynamic_qconfig})
-        elif self.cfg.use_qat:
-            return QATQuantizer(get_default_qat_qconfig(self.cfg.backend))
-        else:
-            return StaticQuantizer(get_default_qconfig(self.cfg.backend))
-    
     @hydra.main(config_path="conf", config_name="config")
     def use_pretrained_quantized_model(self, model_name: str) -> nn.Module:
         if not hasattr(torchvision.models.quantization, model_name):
@@ -634,22 +698,19 @@ class QuantizationManager:
         return getattr(torchvision.models.quantization, model_name)(pretrained=True, quantize=True)
 
     def prepare_model(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
-        if self.use_dynamic_quantization:
-            return model  # Dynamic quantization doesn't require preparation
-        
-        if self.use_fx_graph_mode:
+        if self.cfg.use_fx_graph_mode:
             return self._prepare_fx(model, example_inputs)
         else:
-            return self._prepare_eager(model)
-
+            return self.quantizer.prepare_model(model, example_inputs)
+    
     def _prepare_fx(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
-        if self.use_qat:
+        if self.cfg.use_qat:
             return self.fx_quantization.prepare_qat_fx(model, self.qconfig_mapping, example_inputs,
-                prepare_custom_config_dict=self.prepare_custom_config_dict,
+                prepare_custom_config_dict=self.cfg.prepare_custom_config,
                 backend_config=getattr(self.backend, 'backend_config', None))
         else:
             return self.fx_quantization.prepare_fx(model, self.qconfig_mapping, example_inputs,
-                prepare_custom_config_dict=self.prepare_custom_config_dict,
+                prepare_custom_config_dict=self.cfg.prepare_custom_config,
                 backend_config=getattr(self.backend, 'backend_config', None))
 
     def _prepare_eager(self, model: nn.Module) -> nn.Module:
@@ -661,15 +722,12 @@ class QuantizationManager:
     def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
         logger.info("Starting model quantization")
         
-        if self.use_dynamic_quantization:
-            return DynamicQuantizer(qconfig_spec={nn.Linear: default_dynamic_qconfig}).quantize_model(prepared_model)
-        
-        if self.use_fx_graph_mode:
+        if self.cfg.use_fx_graph_mode:
             return self.fx_quantization.convert_fx(prepared_model, 
-                                                   convert_custom_config_dict=self.convert_custom_config_dict,
+                                                   convert_custom_config_dict=self.cfg.convert_custom_config,
                                                    backend_config=getattr(self.backend, 'backend_config', None))
         else:
-            return convert(prepared_model)
+            return self.quantizer.quantize_model(prepared_model)
 
     def handle_non_traceable_module(self, module: nn.Module, config: Dict[str, Any]) -> nn.Module:
         logger.info(f"Custom handling for non-traceable module: {type(module).__name__}")
