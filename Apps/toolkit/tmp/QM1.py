@@ -7,6 +7,7 @@ import yaml
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, Tuple, List, Callable, TypedDict, Union
 
 # Third-party imports
@@ -128,22 +129,16 @@ class ModelStorageManagement:
 
         logger.info(f"Exported quantized model to {export_path} in {export_format} format")
 
-@dataclass
-class QuantizationConfig(TypedDict):
-    backend: str
-    use_backend_config: bool
-    use_pt2e: bool
-    use_xnnpack: bool
-    use_fx_graph_mode: bool
-    use_dynamic_quantization: bool
-    use_static_quantization: bool
-    use_qat: bool
-    use_custom_module_handling: bool
-    use_enhanced_benchmarking: bool
-    log_file: str
-    skip_symbolic_trace_modules: List[str]
-    prepare_custom_config: Dict[str, Any]
-    convert_custom_config: Dict[str, Any]
+class QuantizationConfig(BaseModel):
+    backend: str = Field("x86", description="Quantization backend")
+    use_fx_graph_mode: bool = Field(True, description="Use FX graph mode for quantization")
+    use_dynamic_quantization: bool = Field(False, description="Use dynamic quantization")
+    use_static_quantization: bool = Field(True, description="Use static quantization")
+    use_qat: bool = Field(False, description="Use Quantization Aware Training")
+    skip_symbolic_trace_modules: List[str] = Field(default_factory=list, description="Modules to skip during symbolic tracing")
+    prepare_custom_config: Dict[str, Any] = Field(default_factory=dict, description="Custom configuration for prepare step")
+    convert_custom_config: Dict[str, Any] = Field(default_factory=dict, description="Custom configuration for convert step")
+    log_file: str = Field("quantization.log", description="Log file path")
 
 class QuantizationBackend:
     def __init__(self, backend: str):
@@ -296,16 +291,16 @@ class FXQuantization:
             quantized_model = torch.quantization.quantize_dynamic(model, qconfig_spec=qconfig_mapping)
         return quantized_model
 
-class Quantizer(ABC):
+class QuantizerBase(ABC):
     @abstractmethod
-    def prepare_model(self, model: nn.Module, example_inputs: torch.Tensor) -> nn.Module:
+    def prepare_model(self, model: nn.Module) -> nn.Module:
         pass
 
     @abstractmethod
-    def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
+    def quantize_model(self, model: nn.Module) -> nn.Module:
         pass
 
-class StaticQuantizer(Quantizer):
+class StaticQuantizer(QuantizerBase):
     def __init__(self, qconfig: QConfig):
         self.qconfig = qconfig
 
@@ -327,7 +322,7 @@ class StaticQuantizer(Quantizer):
                 if i % 10 == 0:
                     logger.info(f"Calibration progress: {i}/{num_batches}")
 
-class DynamicQuantizer(Quantizer):
+class DynamicQuantizer(QuantizerBase):
     def __init__(self, qconfig_spec: Dict[Any, Any]):
         self.qconfig_spec = qconfig_spec
 
@@ -337,7 +332,7 @@ class DynamicQuantizer(Quantizer):
     def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
         return torch.quantization.quantize_dynamic(prepared_model, qconfig_spec=self.qconfig_spec)
       
-class QATQuantizer(Quantizer):
+class QATQuantizer(QuantizerBase):
     def __init__(self, qconfig: QConfig):
         self.qconfig = qconfig
 
@@ -422,17 +417,6 @@ class QATQuantizer(Quantizer):
             return (1 - alpha) * hard_loss + alpha * soft_loss * (temperature ** 2)
         
         return distillation_loss
-class QuantizerFactory:
-    @staticmethod
-    def create_quantizer(quantization_type: str, config: Dict[str, Any]) -> Quantizer:
-        if quantization_type == "static":
-            return StaticQuantizer(config["qconfig"])
-        elif quantization_type == "dynamic":
-            return DynamicQuantizer(config["qconfig_spec"])
-        elif quantization_type == "qat":
-            return QATQuantizer(config["qconfig"])
-        else:
-            raise ValueError(f"Unsupported quantization type: {quantization_type}")
 
 class QuantizationAnalyzer:
     def __init__(self) -> None:
@@ -634,6 +618,14 @@ class QuantizationManager:
 
         logger.add(cfg.log_file, rotation="500 MB")
 
+    def create_quantizer(self):
+        if self.cfg.use_dynamic_quantization:
+            return DynamicQuantizer({nn.Linear: torch.quantization.default_dynamic_qconfig})
+        elif self.cfg.use_qat:
+            return QATQuantizer(get_default_qat_qconfig(self.cfg.backend))
+        else:
+            return StaticQuantizer(get_default_qconfig(self.cfg.backend))
+    
     @hydra.main(config_path="conf", config_name="config")
     def use_pretrained_quantized_model(self, model_name: str) -> nn.Module:
         if not hasattr(torchvision.models.quantization, model_name):
@@ -667,6 +659,8 @@ class QuantizationManager:
         return prepare_qat(model) if self.use_qat else prepare(model)
 
     def quantize_model(self, prepared_model: nn.Module) -> nn.Module:
+        logger.info("Starting model quantization")
+        
         if self.use_dynamic_quantization:
             return DynamicQuantizer(qconfig_spec={nn.Linear: default_dynamic_qconfig}).quantize_model(prepared_model)
         
