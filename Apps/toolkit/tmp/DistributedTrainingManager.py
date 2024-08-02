@@ -2,6 +2,9 @@
 import os
 import time
 from packaging import version as LooseVersion
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+
 import torch
 import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
@@ -29,6 +32,74 @@ from torch.distributed.tensor.parallel import (
 from torch.distributed.optim import ZeroRedundancyOptimizer
 
 
+@dataclass
+class TrainingConfig:
+    # General settings
+    world_size: int = 1
+    rank: int = 0
+    backend: str = 'nccl'
+    parallel_strategy: str = 'data_parallel'
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Model settings
+    split_size: int = 20
+    enable_checkpointing: bool = True
+
+    # Optimization settings
+    enable_amp: bool = False
+    amp_dtype: torch.dtype = torch.float16
+    enable_gradient_clipping: bool = False
+    gradient_clipping_threshold: float = 1.0
+    enable_gradient_accumulation: bool = False
+    gradient_accumulation_steps: int = 1
+    enable_gradient_penalty: bool = False
+    gradient_penalty_lambda: float = 10.0
+
+    # DDP settings
+    enable_ddp: bool = False
+    enable_join: bool = False
+    gradient_as_bucket_view: bool = False
+    static_graph: bool = False
+    delay_all_reduce_named_params: Optional[List[Tuple[str, nn.Parameter]]] = None
+    param_to_hook_all_reduce: Optional[nn.Parameter] = None
+    enable_ddp_optimizer: bool = False
+
+    # FSDP settings
+    enable_fsdp: bool = False
+    fsdp_cpu_offload: bool = False
+    fsdp_auto_wrap_policy: Optional[Callable] = None
+    fsdp_backward_prefetch: Optional[BackwardPrefetch] = None
+    fsdp_sharding_strategy: ShardingStrategy = ShardingStrategy.FULL_SHARD
+    use_enhanced_fsdp: bool = False
+    fsdp_mixed_precision: bool = False
+    fsdp_forward_prefetch: bool = False
+    fsdp_state_dict_type: str = "full"
+
+    # Device mesh settings
+    use_device_mesh: bool = False
+
+    # Tensor parallel settings
+    use_tensor_parallel: bool = False
+    tp_mesh_shape: Tuple[int, ...] = (1,)
+
+    # ZeRO settings
+    enable_zero: bool = False
+    zero_optimizer_class: torch.optim.Optimizer = torch.optim.Adam
+    zero_overlap_comm: bool = True
+
+    # Additional settings (you might want to add or remove based on your needs)
+    seed: int = 42
+    log_interval: int = 10
+    save_interval: int = 1000
+    eval_interval: int = 1000
+    num_epochs: int = 10
+    batch_size: int = 32
+    learning_rate: float = 0.001
+    weight_decay: float = 0.0001
+
+    def __post_init__(self):
+        self.device = torch.device(f"cuda:{self.rank}" if torch.cuda.is_available() else "cpu")
+
 class ParallelStrategy:
     DATA_PARALLEL: str = "data_parallel"
     MODEL_PARALLEL: str = "model_parallel"
@@ -41,8 +112,35 @@ class ParallelStrategy:
     TP_ROWWISE: str = "tp_rowwise"
     TP_SEQUENCE: str = "tp_sequence"
     ZERO: str = "zero"
-    
-class TrainingManager:
+
+class BaseStrategy(ABC):
+    @abstractmethod
+    def prepare_model(self, model: nn.Module) -> nn.Module:
+        pass
+
+    @abstractmethod
+    def prepare_dataloader(self, dataset: torch.utils.data.Dataset) -> torch.utils.data.DataLoader:
+        pass
+
+    @abstractmethod
+    def backward_loss(self, loss: torch.Tensor, optimizer: torch.optim.Optimizer, step: int) -> None:
+        pass
+
+    @abstractmethod
+    def should_step(self, step: int) -> bool:
+        pass
+
+    @abstractmethod
+    def optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
+        pass
+
+    @abstractmethod
+    def save_checkpoint(self, model: nn.Module, optimizer: torch.optim.Optimizer, 
+                        epoch: int, loss: float, path: str) -> None:
+        pass
+
+
+class DistributedTrainingManager:
     def __init__(
         self,
         model: nn.Module,
