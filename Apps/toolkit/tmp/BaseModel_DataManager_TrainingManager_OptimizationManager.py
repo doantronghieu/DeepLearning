@@ -5,7 +5,6 @@ from typing import Any, Dict, Iterable, Literal, Optional, Union, List, Tuple
 from loguru import logger
 from pydantic import BaseModel, Field
 from tensorboardX import SummaryWriter
-from torchvision import transforms
 import torch
 import torch.nn as nn
 import torchmetrics
@@ -192,7 +191,7 @@ class DataParams(BaseModel):
     Pydantic model for all data-related parameters.
     """
     data_path: Union[str, List[str]] = Field(..., description="Path(s) to the dataset")
-    task_type: str = Field(..., description="Type of task (e.g., 'vision', 'nlp', 'tabular')")
+    task_type: Literal['vision', 'nlp', 'tabular'] = Field(..., description="Type of task")
     batch_size: int = Field(32, description="Batch size for data loading")
     num_workers: int = Field(4, description="Number of workers for data loading")
     shuffle: bool = Field(True, description="Whether to shuffle the dataset")
@@ -356,6 +355,10 @@ class MetricsManager(ABC):
             metric.to(device)
         return self
 
+class ModelStorageManager(ABC):
+  def __init__(self) -> None:
+      super().__init__()
+  
 class TrainingParams(BaseModel):
     """
     Pydantic model for all training parameters.
@@ -441,7 +444,7 @@ class TrainingManager(ABC):
             torch.cuda.manual_seed_all(seed)
 
     @abstractmethod
-    def train_step(self, batch: Iterable[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
+    def train_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
         """
         Perform a single training step.
         """
@@ -472,9 +475,8 @@ class TrainingManager(ABC):
         self.metrics_manager.update(outputs, targets)
         return {'loss': loss.item()}
 
-
     @abstractmethod
-    def val_step(self, batch: Iterable[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
+    def val_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
         inputs, targets = batch
         inputs, targets = inputs.to(self.train_params.device), targets.to(self.train_params.device)
 
