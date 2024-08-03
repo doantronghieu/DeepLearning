@@ -577,7 +577,7 @@ class TrainingManager(ABC):
     def to_device(self) -> None:
         self.model.to(self.train_params.device)
         self.loss_fn.to(self.train_params.device)
-
+    
     def load_model(self, path: str) -> None:
         loaded_info = self.model_storage.load_model(self.model, self.optimizer, path, self.train_params.device)
         self.train_params = TrainingParams(**loaded_info['train_params'])
@@ -590,17 +590,13 @@ class TrainingManager(ABC):
             torch.cuda.manual_seed_all(seed)
 
     @abstractmethod
-    def train_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
-        """
-        Perform a single training step.
-        """
-        inputs, targets = batch
-        inputs, targets = inputs.to(self.train_params.device), targets.to(self.train_params.device)
+    def train_step(self, batch: Any) -> Dict[str, float]:
+        inputs, targets = self._prepare_batch(batch)
 
         self.optimizer.zero_grad()
 
         if self.train_params.use_mixed_precision:
-            with torch.cuda.amp.autocast():
+            with autocast():
                 outputs = self.model(inputs)
                 loss: torch.Tensor = self.loss_fn(outputs, targets)
             
@@ -612,7 +608,7 @@ class TrainingManager(ABC):
             self.scaler.update()
         else:
             outputs = self.model(inputs)
-            loss = self.loss_fn(outputs, targets)
+            loss: torch.Tensor = self.loss_fn(outputs, targets)
             loss.backward()
             if self.train_params.clip_grad_norm:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
@@ -622,17 +618,27 @@ class TrainingManager(ABC):
         return {'loss': loss.item()}
 
     @abstractmethod
-    def val_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
-        inputs, targets = batch
-        inputs, targets = inputs.to(self.train_params.device), targets.to(self.train_params.device)
+    def val_step(self, batch: Any) -> Dict[str, float]:
+        inputs, targets = self._prepare_batch(batch)
 
         with torch.no_grad():
             outputs = self.model(inputs)
-            loss = self.loss_fn(outputs, targets)
+            loss: torch.Tensor = self.loss_fn(outputs, targets)
 
         self.metrics_manager.update(outputs, targets)
         return {'loss': loss.item()}
 
+    def _prepare_batch(self, batch: Any) -> Tuple[torch.Tensor, torch.Tensor]:
+        if isinstance(batch, (tuple, list)) and len(batch) == 2:
+            inputs, targets = batch
+        elif isinstance(batch, dict):
+            inputs = batch['input']
+            targets = batch['target']
+        else:
+            raise ValueError("Unsupported batch format")
+        
+        return inputs.to(self.train_params.device), targets.to(self.train_params.device)
+    
     def train_epoch(self, epoch: int) -> Dict[str, float]:
         self.model.train()
         self.metrics_manager.reset()
@@ -713,6 +719,7 @@ class TrainingManager(ABC):
 
     def test_loop(self) -> Dict[str, float]:
         self.model.eval()
+        self.metrics_manager.reset()
         total_loss = 0.0
         num_batches = len(self.test_data_loader)
         
@@ -721,9 +728,10 @@ class TrainingManager(ABC):
                 step_results = self.val_step(batch)
                 total_loss += step_results['loss']
         
-        avg_loss = total_loss / num_batches
-        logger.info(f"Test Loss: {avg_loss:.4f}")
-        return {'loss': avg_loss}
+        metrics = self.metrics_manager.compute()
+        metrics['loss'] = total_loss / num_batches
+        logger.info(f"Test Results: {metrics}")
+        return metrics
 
     def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, torch.Tensor]]) -> None:
         if self.train_params.use_tensorboard:
@@ -734,6 +742,7 @@ class TrainingManager(ABC):
         log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
         logger.info(log_str)
 
+    
 class OptimizationManager:
     """
     Class for managing model optimization and profiling.
