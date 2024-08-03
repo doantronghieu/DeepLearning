@@ -2,39 +2,39 @@
 
 ## Basics
 
+### [Learn the Basics](https://pytorch.org/tutorials/beginner/basics/intro.html)
+
+### [Learning PyTorch with Examples](https://pytorch.org/tutorials/beginner/pytorch_with_examples.html)
+
+### [What is torch.nn really?](https://pytorch.org/tutorials/beginner/nn_tutorial.html)
+
 ### [Defining a Neural Network](https://pytorch.org/tutorials/recipes/recipes/defining_a_neural_network.html)
 
 ### [What is a state_dict in PyTorch](https://pytorch.org/tutorials/recipes/recipes/what_is_state_dict.html)
 
-### [Saving and loading models for inference in PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_models_for_inference.html)
+### [Visualizing Models, Data, and Training with TensorBoard](https://pytorch.org/tutorials/intermediate/tensorboard_tutorial.html)
 
-### [Saving and loading a general checkpoint in PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html)
-
-### [Saving and loading multiple models in one file using PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_multiple_models_in_one_file.html)
-
-### [Warmstarting model using parameters from a different model in PyTorch](https://pytorch.org/tutorials/recipes/recipes/warmstarting_model_using_parameters_from_a_different_model.html)
-
-### [Saving and loading models across devices in PyTorch](https://pytorch.org/tutorials/recipes/recipes/save_load_across_devices.html)
+### [Good usage of `non_blocking` and `pin_memory()` in PyTorch](https://pytorch.org/tutorials/intermediate/pinmem_nonblock.html)
 
 ### [Zeroing out gradients in PyTorch](https://pytorch.org/tutorials/recipes/recipes/zeroing_out_gradients.html)
 
-### [PyTorch Benchmark](https://pytorch.org/tutorials/recipes/recipes/benchmark.html)
-
-### [PyTorch Benchmark (quick start)](https://pytorch.org/tutorials/recipes/recipes/timer_quick_start.html)
-
-### [PyTorch Profiler](https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
-
-### [PyTorch Profiler with Instrumentation and Tracing Technology API (ITT API) support](https://pytorch.org/tutorials/recipes/profile_with_itt.html)
-
-### [Torch Compile IPEX Backend](https://pytorch.org/tutorials/recipes/torch_compile_backend_ipex.html)
-
 ### [Reasoning about Shapes in PyTorch](https://pytorch.org/tutorials/recipes/recipes/reasoning_about_shapes.html)
 
-### [Tips for Loading an nn.Module from a Checkpoint](https://pytorch.org/tutorials/recipes/recipes/module_load_state_dict_tips.html)
-
-### [(beta) Using TORCH_LOGS to observe torch.compile](https://pytorch.org/tutorials/recipes/torch_logs.html)
-
 ### [Extension points in nn.Module for loading state_dict and tensor subclasses](https://pytorch.org/tutorials/recipes/recipes/swap_tensors.html)
+
+### Saving and loading
+
+#### [Saving and loading models for inference in PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_models_for_inference.html)
+
+#### [Saving and loading a general checkpoint in PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html)
+
+#### [Saving and loading multiple models in one file using PyTorch](https://pytorch.org/tutorials/recipes/recipes/saving_multiple_models_in_one_file.html)
+
+#### [Warmstarting model using parameters from a different model in PyTorch](https://pytorch.org/tutorials/recipes/recipes/warmstarting_model_using_parameters_from_a_different_model.html)
+
+#### [Saving and loading models across devices in PyTorch](https://pytorch.org/tutorials/recipes/recipes/save_load_across_devices.html)
+
+#### [Tips for Loading an nn.Module from a Checkpoint](https://pytorch.org/tutorials/recipes/recipes/module_load_state_dict_tips.html)
 
 ## Distributed Training
 
@@ -171,45 +171,5 @@ CODED
 #### [Getting Started with Distributed Checkpoint (DCP)](https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html)
 
 #### [Asynchronous Checkpointing (DCP)](https://pytorch.org/tutorials/recipes/distributed_async_checkpoint_recipe.html)
-
-### AMP
-
-#### [Automatic Mixed Precision](https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html)
-
-CODED
-
-#### [Automatic Mixed Precision examples](https://pytorch.org/docs/stable/notes/amp_examples.html)
-
-CODED
-
-## TorchScript
-
-### [TorchScript](https://pytorch.org/docs/master/jit.html)
-
-CODED
-
-### [Introduction to TorchScript](https://pytorch.org/tutorials/beginner/Intro_to_TorchScript_tutorial.html)
-
-CODED
-
-### [Loading a TorchScript Model in C++](https://pytorch.org/tutorials/advanced/cpp_export.html)
-
-CODED
-
-### [TorchScript for Deployment](https://pytorch.org/tutorials/recipes/torchscript_inference.html)
-
-CODED
-
-### [Model Freezing in TorchScript](https://pytorch.org/tutorials/prototype/torchscript_freezing.html)
-
-CODED
-
-### [torch.jit](https://pytorch.org/docs/master/jit.html)
-
-CODED
-
-### [Dynamic Parallelism in TorchScript](https://pytorch.org/tutorials/advanced/torch-script-parallelism.html?highlight=torchscript)
-
-CODED
 
 ### [Deploying with Flask](https://pytorch.org/tutorials/recipes/deployment_with_flask.html)

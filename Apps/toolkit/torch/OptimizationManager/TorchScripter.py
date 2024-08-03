@@ -4,7 +4,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union, Dict
 import time
 import torch.nn.functional as F
 
-class TorchScriptManager:
+class TorchScripter:
     def __init__(self):
         self.compiled_modules = {}
         self.use_mixed_compilation = False

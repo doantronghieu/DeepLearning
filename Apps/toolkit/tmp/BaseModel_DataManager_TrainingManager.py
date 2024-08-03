@@ -812,45 +812,4 @@ class TrainingManager(ABC):
         log_str = f"{phase.capitalize()} Epoch {epoch+1}, Step {step}: "
         log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
         logger.info(log_str)
-
     
-class OptimizationManager:
-    """
-    Class for managing model optimization and profiling.
-    """
-
-    def __init__(self, model: nn.Module) -> None:
-        self.model = model
-
-    def profile(self, input_tensor: torch.Tensor) -> Dict[str, Any]:
-        """
-        Profile the model's performance and memory usage.
-        """
-        logger.info("Profiling model performance and memory usage...")
-        self.model.eval()
-        with torch.no_grad():
-            summary_data = torch_summary(self.model, input_data=input_tensor, verbose=0)
-        return summary_data
-
-    def benchmark(self, input_tensor: torch.Tensor, num_runs: int = 100) -> float:
-        """
-        Benchmark the model's forward pass.
-        """
-        logger.info(f"Benchmarking model with {num_runs} runs...")
-        self.model.eval()
-        with torch.no_grad():
-            torch.cuda.synchronize()
-            start_time = torch.cuda.Event(enable_timing=True)
-            end_time = torch.cuda.Event(enable_timing=True)
-            
-            start_time.record()
-            for _ in range(num_runs):
-                _ = self.model(input_tensor)
-            end_time.record()
-            
-            torch.cuda.synchronize()
-            elapsed_time = start_time.elapsed_time(end_time)
-            avg_time = elapsed_time / num_runs
-            
-        logger.info(f"Average inference time: {avg_time:.2f} ms")
-        return avg_time

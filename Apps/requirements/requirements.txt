@@ -10,9 +10,12 @@ torchserve
 pytorch-lightning
 fastai
 transformers
+tritonclient
 
 # Data
 albumentations # Image
+plotly
+seaborn
 
 # Training
 ray
