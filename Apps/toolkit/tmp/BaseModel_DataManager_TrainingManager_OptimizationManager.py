@@ -10,16 +10,21 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.model_selection import train_test_split
-from torchinfo import summary
+from torchinfo import summary as torch_summary
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, CosineAnnealingLR
 from torch.cuda.amp import GradScaler, autocast
-
 
 
 class BaseModel(nn.Module, ABC):
     """
     Abstract base class for all models in the framework.
     """
+
+    def __init__(self):
+        super().__init__()
+        self.model_type: Optional[str] = None
+        self.input_shape: Optional[Tuple[int, ...]] = None
+        self.output_shape: Optional[Tuple[int, ...]] = None
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -36,24 +41,106 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def compute_loss(self, **kwargs) -> torch.Tensor:
+    def compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor, **kwargs) -> torch.Tensor:
         """
         Compute the loss for the model.
         """
         pass
 
     @abstractmethod
-    def compute_prediction(self, **kwargs) -> Any:
+    def compute_prediction(self, outputs: torch.Tensor, **kwargs) -> Any:
         """
-        Compute predictions from the model.
+        Compute predictions from the model outputs.
         """
         pass
 
-    def get_info(self, input_size: tuple) -> Dict[str, Any]:
+    def get_info(self) -> Dict[str, Any]:
         """
-        Get information about the model using torchinfo.
+        Get information about the model.
         """
-        return summary(self, input_size=input_size, verbose=0)
+        return {
+            "model_type": self.model_type,
+            "input_shape": self.input_shape,
+            "output_shape": self.output_shape,
+            "num_parameters": sum(p.numel() for p in self.parameters()),
+            "trainable_parameters": sum(p.numel() for p in self.parameters() if p.requires_grad),
+        }
+
+    def set_model_type(self, model_type: str) -> None:
+        """
+        Set the model type (e.g., 'vision', 'nlp', 'tabular').
+        """
+        self.model_type = model_type
+
+    def set_input_shape(self, input_shape: Tuple[int, ...]) -> None:
+        """
+        Set the input shape of the model.
+        """
+        self.input_shape = input_shape
+
+    def set_output_shape(self, output_shape: Tuple[int, ...]) -> None:
+        """
+        Set the output shape of the model.
+        """
+        self.output_shape = output_shape
+
+    def freeze(self) -> None:
+        """
+        Freeze all model parameters.
+        """
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def unfreeze(self) -> None:
+        """
+        Unfreeze all model parameters.
+        """
+        for param in self.parameters():
+            param.requires_grad = True
+
+    def get_trainable_params(self) -> Dict[str, nn.Parameter]:
+        """
+        Get all trainable parameters of the model.
+        """
+        return {name: param for name, param in self.named_parameters() if param.requires_grad}
+
+    def load_pretrained_weights(self, weights_path: str) -> None:
+        """
+        Load pretrained weights into the model.
+        """
+        self.load_state_dict(torch.load(weights_path))
+
+    def get_layer_output(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
+        """
+        Get the output of a specific layer given an input tensor.
+        """
+        for name, module in self.named_modules():
+            x = module(x)
+            if name == layer_name:
+                return x
+        raise ValueError(f"Layer {layer_name} not found in the model.")
+
+    def summary(self, input_size: Optional[Tuple[int, ...]] = None) -> None:
+        """
+        Print a summary of the model architecture.
+        """
+        
+        if input_size is None and self.input_shape is None:
+            raise ValueError("Please provide input_size or set input_shape for the model.")
+        
+        input_size = input_size or self.input_shape
+        torch_summary(self, input_size=input_size)
+
+    def to_onnx(self, file_path: str, input_shape: Optional[Tuple[int, ...]] = None) -> None:
+        """
+        Export the model to ONNX format.
+        """
+        if input_shape is None and self.input_shape is None:
+            raise ValueError("Please provide input_shape or set input_shape for the model.")
+        
+        input_shape = input_shape or self.input_shape
+        dummy_input = torch.randn(input_shape)
+        torch.onnx.export(self, dummy_input, file_path, verbose=True)
 
 class CustomDataset(Dataset, ABC):
     """
@@ -405,7 +492,7 @@ class OptimizationManager:
         logger.info("Profiling model performance and memory usage...")
         self.model.eval()
         with torch.no_grad():
-            summary_data = summary(self.model, input_data=input_tensor, verbose=0)
+            summary_data = torch_summary(self.model, input_data=input_tensor, verbose=0)
         return summary_data
 
     def benchmark(self, input_tensor: torch.Tensor, num_runs: int = 100) -> float:
