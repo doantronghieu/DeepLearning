@@ -100,6 +100,16 @@ class BaseModel(nn.Module, ABC):
         if output_shape:
             self._layer_shapes[-1] = output_shape
 
+    @property
+    def device(self) -> torch.device:
+        """
+        Get the device on which the model is currently loaded.
+
+        Returns:
+            torch.device: The device of the model
+        """
+        return next(self.parameters()).device
+    
     def freeze_layers(self, layer_names: List[str]) -> None:
         """
         Freeze specified layers of the model.
@@ -107,6 +117,7 @@ class BaseModel(nn.Module, ABC):
         for name, param in self.named_parameters():
             if any(layer_name in name for layer_name in layer_names):
                 param.requires_grad = False
+        logger.info(f"Frozen layers: {layer_names}")
 
     def unfreeze_layers(self, layer_names: List[str]) -> None:
         """
@@ -115,6 +126,7 @@ class BaseModel(nn.Module, ABC):
         for name, param in self.named_parameters():
             if any(layer_name in name for layer_name in layer_names):
                 param.requires_grad = True
+        logger.info(f"Unfrozen layers: {layer_names}")
 
     def get_trainable_params(self) -> Dict[str, nn.Parameter]:
         """
@@ -130,8 +142,13 @@ class BaseModel(nn.Module, ABC):
         """
         Load pretrained weights into the model with option for non-strict loading.
         """
-        state_dict = torch.load(weights_path)
-        self.load_state_dict(state_dict, strict=strict)
+        try:
+            state_dict = torch.load(weights_path, map_location=self.device)
+            self.load_state_dict(state_dict, strict=strict)
+            logger.info(f"Pretrained weights loaded from {weights_path}")
+        except Exception as e:
+            logger.error(f"Error loading pretrained weights: {str(e)}")
+            raise
 
     def get_layer_output(
         self, 
@@ -154,12 +171,12 @@ class BaseModel(nn.Module, ABC):
         for name, module in self.named_modules():
             if name == layer_name:
                 return module
-        raise ValueError(f"Layer {layer_name} not found in the model.")
+        raise ValueError(f"Layer {layer_name} not found in the model")
     
     def get_shape(
-      self, 
-      layer: Union[int, str], 
-      dummy_input: Optional[torch.Tensor] = None
+        self, 
+        layer: Union[int, str], 
+        dummy_input: Optional[torch.Tensor] = None
     ) -> Tuple[int, ...]:
         """
         Get the shape of a specific layer.
@@ -570,9 +587,7 @@ class ModelStorageManager:
         return model    
   
 class TrainingParams(BaseModel):
-    """
-    Pydantic model for all training parameters.
-    """
+    """Pydantic model for all training parameters."""
     device: str = Field("cuda" if torch.cuda.is_available() else "cpu", description="Device to use for training")
     learning_rate: float = Field(1e-3, description="Learning rate for optimization")
     batch_size: int = Field(32, description="Batch size for training")
@@ -594,9 +609,7 @@ class TrainingParams(BaseModel):
         arbitrary_types_allowed = True
 
 class TrainingManager(ABC):
-    """
-    Abstract base class for managing the training process.
-    """
+    """Abstract base class for managing the training process."""
 
     def __init__(
         self,
@@ -620,8 +633,7 @@ class TrainingManager(ABC):
         self.scheduler = self._get_scheduler() if self.train_params.use_scheduler else None
         self.scaler = GradScaler() if self.train_params.use_mixed_precision else None
         
-        if self.train_params.use_tensorboard:
-            self.writer = SummaryWriter()
+        self.writer = SummaryWriter() if self.train_params.use_tensorboard else None
         
         self.best_val_loss = float('inf')
         self.patience_counter = 0
@@ -629,6 +641,7 @@ class TrainingManager(ABC):
         self.metrics_manager = MetricsManager(metrics_config, device=self.train_params.device)
 
     def _get_optimizer(self) -> torch.optim.Optimizer:
+        """Initialize and return the optimizer based on training parameters."""
         if self.train_params.optimizer.lower() == 'adam':
             return torch.optim.Adam(self.model.parameters(), lr=self.train_params.learning_rate)
         elif self.train_params.optimizer.lower() == 'sgd':
@@ -637,6 +650,7 @@ class TrainingManager(ABC):
             raise ValueError(f"Unsupported optimizer: {self.train_params.optimizer}")
 
     def _get_scheduler(self) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
+        """Initialize and return the learning rate scheduler based on training parameters."""
         if self.train_params.scheduler_type == 'reduce_on_plateau':
             return ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=5)
         elif self.train_params.scheduler_type == 'step':
@@ -646,22 +660,29 @@ class TrainingManager(ABC):
         return None
 
     def to_device(self) -> None:
+        """Move the model and loss function to the specified device."""
         self.model.to(self.train_params.device)
         self.loss_fn.to(self.train_params.device)
     
     def load_model(self, path: str) -> None:
-        loaded_info = self.model_storage.load_model(self.model, self.optimizer, path, self.train_params.device)
-        self.train_params = TrainingParams(**loaded_info['train_params'])
-        logger.info(f"Model loaded from {path}")
-        logger.info(f"Loaded model info: Epoch {loaded_info['epoch']}, Metrics: {loaded_info['metrics']}")
+        """Load a saved model and update training parameters."""
+        try:
+            loaded_info = self.model_storage.load_model(self.model, self.optimizer, path, self.train_params.device)
+            self.train_params = TrainingParams(**loaded_info['train_params'])
+            logger.info(f"Model loaded from {path}")
+            logger.info(f"Loaded model info: Epoch {loaded_info['epoch']}, Metrics: {loaded_info['metrics']}")
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            raise
     
     def set_seed(self, seed: int) -> None:
+        """Set random seed for reproducibility."""
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
-    @abstractmethod
     def train_step(self, batch: Any) -> Dict[str, float]:
+        """Perform a single training step."""
         inputs, targets = self._prepare_batch(batch)
 
         self.optimizer.zero_grad()
@@ -688,8 +709,9 @@ class TrainingManager(ABC):
         self.metrics_manager.update(outputs, targets)
         return {'loss': loss.item()}
 
-    @abstractmethod
+
     def val_step(self, batch: Any) -> Dict[str, float]:
+        """Perform a single validation step."""
         inputs, targets = self._prepare_batch(batch)
 
         with torch.no_grad():
@@ -700,17 +722,23 @@ class TrainingManager(ABC):
         return {'loss': loss.item()}
 
     def _prepare_batch(self, batch: Any) -> Tuple[torch.Tensor, torch.Tensor]:
-        if isinstance(batch, (tuple, list)) and len(batch) == 2:
-            inputs, targets = batch
-        elif isinstance(batch, dict):
-            inputs = batch['input']
-            targets = batch['target']
-        else:
-            raise ValueError("Unsupported batch format")
-        
-        return inputs.to(self.train_params.device), targets.to(self.train_params.device)
+        """Prepare a batch of data for training or validation."""
+        try:
+            if isinstance(batch, (tuple, list)) and len(batch) == 2:
+                inputs, targets = batch
+            elif isinstance(batch, dict):
+                inputs: torch.Tensor = batch['input']
+                targets: torch.Tensor = batch['target']
+            else:
+                raise ValueError("Unsupported batch format")
+            
+            return inputs.to(self.train_params.device), targets.to(self.train_params.device)
+        except Exception as e:
+            logger.error(f"Error preparing batch: {str(e)}")
+            raise
     
     def train_epoch(self, epoch: int) -> Dict[str, float]:
+        """Train the model for one epoch."""
         self.model.train()
         self.metrics_manager.reset()
         total_loss = 0.0
@@ -734,6 +762,7 @@ class TrainingManager(ABC):
         return metrics
 
     def validate(self, epoch: int) -> Dict[str, float]:
+        """Validate the model on the validation set."""
         self.model.eval()
         self.metrics_manager.reset()
         total_loss = 0.0
@@ -750,6 +779,7 @@ class TrainingManager(ABC):
         return metrics
 
     def train_loop(self) -> None:
+        """Main training loop."""
         for epoch in range(self.train_params.epochs):
             train_results = self.train_epoch(epoch)
             
@@ -789,6 +819,7 @@ class TrainingManager(ABC):
             )
 
     def test_loop(self) -> Dict[str, float]:
+        """Evaluate the model on the test set."""
         self.model.eval()
         self.metrics_manager.reset()
         total_loss = 0.0
@@ -805,11 +836,11 @@ class TrainingManager(ABC):
         return metrics
 
     def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, torch.Tensor]]) -> None:
-        if self.train_params.use_tensorboard:
+        """Log training progress to console and TensorBoard."""
+        if self.writer:
             for metric_name, metric_value in metrics.items():
                 self.writer.add_scalar(f"{phase}/{metric_name}", metric_value, epoch * len(self.train_data_loader) + step)
         
         log_str = f"{phase.capitalize()} Epoch {epoch+1}, Step {step}: "
         log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
         logger.info(log_str)
-    
