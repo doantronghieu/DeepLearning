@@ -1,8 +1,9 @@
 from tqdm import tqdm
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Literal, Optional, Union, List, Tuple
+from typing import Callable, Any, Dict, Literal, Optional, Union, List, Tuple
 from loguru import logger
+import numpy as np
 from pydantic import BaseModel, Field
 from tensorboardX import SummaryWriter
 import torch
@@ -169,35 +170,56 @@ class BaseModel(nn.Module, ABC):
 
 class CustomDataset(Dataset, ABC):
     """
-    Abstract base class for custom datasets.
+    A flexible custom dataset class that can handle various data types and tasks.
     """
+    def __init__(
+        self,
+        data: Union[List, np.ndarray, torch.Tensor],
+        targets: Optional[Union[List, np.ndarray, torch.Tensor]] = None,
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None
+    ):
+        self.data = data
+        self.targets = targets
+        self.transform = transform
+        self.target_transform = target_transform
 
     @abstractmethod
     def __len__(self) -> int:
-        """
-        Get the length of the dataset.
-        """
-        pass
+        return len(self.data)
 
     @abstractmethod
-    def __getitem__(self, idx: int) -> Any:
-        """
-        Get a sample from the dataset.
-        """
-        pass
+    def __getitem__(self, idx: int) -> Union[Any, Tuple[Any, Any]]:
+        item = self.data[idx]
+        if self.transform:
+            item = self.transform(item)
+        
+        if self.targets is not None:
+            target = self.targets[idx]
+            if self.target_transform:
+                target = self.target_transform(target)
+            return item, target
+        
+        return item
 
 class DataParams(BaseModel):
     """
-    Pydantic model for all data-related parameters.
+    Enhanced Pydantic model for all data-related parameters.
     """
     data_path: Union[str, List[str]] = Field(..., description="Path(s) to the dataset")
-    task_type: Literal['vision', 'nlp', 'tabular'] = Field(..., description="Type of task")
+    task_type: Optional[str] = Field(..., description="Type of task (e.g., 'vision', 'nlp', 'tabular')")
     batch_size: int = Field(32, description="Batch size for data loading")
     num_workers: int = Field(4, description="Number of workers for data loading")
     shuffle: bool = Field(True, description="Whether to shuffle the dataset")
     validation_split: float = Field(0.2, description="Fraction of data to use for validation")
     test_split: float = Field(0.1, description="Fraction of data to use for testing")
     transforms: Optional[Dict[str, Any]] = Field(None, description="Transform configurations")
+    
+    input_size: Optional[Tuple[int, ...]] = Field(None, description="Input size for the model (e.g., image dimensions)")
+    
+    num_classes: Optional[int] = Field(None, description="Number of classes for classification tasks")
+    class_names: Optional[List[str]] = Field(None, description="List of class names")
+    augmentations: Optional[Dict[str, Any]] = Field(None, description="Data augmentation configurations")
 
     class Config:
         arbitrary_types_allowed = True
@@ -255,7 +277,6 @@ class DataManager(ABC):
         data = self.load_data()
         preprocessed_data = self.preprocess_data(data)
 
-        # Split data into train+val and test
         if self.params.test_split > 0:
             train_val_data, test_data = train_test_split(
                 preprocessed_data, 
@@ -265,14 +286,14 @@ class DataManager(ABC):
         else:
             train_val_data, test_data = preprocessed_data, None
 
-        # Split train+val into train and val
         if self.params.validation_split > 0:
-            train_size = int((1 - self.params.validation_split) * len(train_val_data))
-            val_size = len(train_val_data) - train_size
-            self.train_dataset, self.val_dataset = random_split(
-                self.create_dataset(train_val_data, is_train=True),
-                [train_size, val_size]
+            train_data, val_data = train_test_split(
+                train_val_data,
+                test_size=self.params.validation_split / (1 - self.params.test_split),
+                random_state=42
             )
+            self.train_dataset = self.create_dataset(train_data, is_train=True)
+            self.val_dataset = self.create_dataset(val_data, is_train=False)
         else:
             self.train_dataset = self.create_dataset(train_val_data, is_train=True)
             self.val_dataset = None
