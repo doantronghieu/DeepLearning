@@ -26,6 +26,7 @@ class BaseModel(nn.Module, ABC):
         self.input_shape: Optional[Tuple[int, ...]] = None
         self.output_shape: Optional[Tuple[int, ...]] = None
         self.task_type: Optional[str] = None
+        self._layer_shapes: Dict[Union[int, str], Tuple[int, ...]] = {}
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -42,14 +43,23 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor, **kwargs) -> torch.Tensor:
+    def compute_loss(
+      self, 
+      outputs: torch.Tensor, 
+      targets: torch.Tensor, 
+      **kwargs
+    ) -> torch.Tensor:
         """
         Compute the loss for the model.
         """
         pass
 
     @abstractmethod
-    def compute_prediction(self, outputs: torch.Tensor, **kwargs) -> Any:
+    def compute_prediction(
+      self, 
+      outputs: torch.Tensor, 
+      **kwargs
+    ) -> Any:
         """
         Compute predictions from the model outputs.
         """
@@ -70,7 +80,13 @@ class BaseModel(nn.Module, ABC):
             "layers": [f"{name}: {module.__class__.__name__}" for name, module in self.named_children()],
         }
 
-    def set_model_attributes(self, model_type: str, task_type: str, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...]) -> None:
+    def set_model_attributes(
+      self, 
+      model_type: str, 
+      task_type: str, 
+      input_shape: Optional[Tuple[int, ...]], 
+      output_shape: Optional[Tuple[int, ...]]
+    ) -> None:
         """
         Set multiple model attributes at once.
         """
@@ -78,6 +94,10 @@ class BaseModel(nn.Module, ABC):
         self.task_type = task_type
         self.input_shape = input_shape
         self.output_shape = output_shape
+        if input_shape:
+            self._layer_shapes[0] = input_shape
+        if output_shape:
+            self._layer_shapes[-1] = output_shape
 
     def freeze_layers(self, layer_names: List[str]) -> None:
         """
@@ -101,14 +121,22 @@ class BaseModel(nn.Module, ABC):
         """
         return {name: param for name, param in self.named_parameters() if param.requires_grad}
 
-    def load_pretrained_weights(self, weights_path: str, strict: bool = True) -> None:
+    def load_pretrained_weights(
+      self, 
+      weights_path: str, 
+      strict: bool = True
+    ) -> None:
         """
         Load pretrained weights into the model with option for non-strict loading.
         """
         state_dict = torch.load(weights_path)
         self.load_state_dict(state_dict, strict=strict)
 
-    def get_layer_output(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
+    def get_layer_output(
+      self, 
+      x: torch.Tensor, 
+      layer_name: str
+    ) -> torch.Tensor:
         """
         Get the output of a specific layer given an input tensor.
         """
@@ -117,7 +145,59 @@ class BaseModel(nn.Module, ABC):
             if name == layer_name:
                 return x
         raise ValueError(f"Layer {layer_name} not found in the model.")
+    
+    def get_layer(self, layer_name: str) -> nn.Module:
+        """
+        Get a specific layer of the model by name.
+        """
+        for name, module in self.named_modules():
+            if name == layer_name:
+                return module
+        raise ValueError(f"Layer {layer_name} not found in the model.")
+    
+    def get_shape(self, layer: Union[int, str]) -> Tuple[int, ...]:
+        """
+        Get the shape of a specific layer.
+        
+        Args:
+            layer: Layer identifier. Can be:
+                   - int: Layer number (0 for input, -1 for output)
+                   - str: Layer name
+        
+        Returns:
+            Tuple representing the shape of the layer
+        """
+        if isinstance(layer, int):
+            if layer == 0:
+                return self.input_shape if self.input_shape is not None else tuple()
+            elif layer == -1:
+                return self.output_shape if self.output_shape is not None else tuple()
+            elif layer in self._layer_shapes:
+                return self._layer_shapes[layer]
+        elif isinstance(layer, str):
+            for name, module in self.named_modules():
+                if name == layer:
+                    return tuple(module.weight.shape) if hasattr(module, 'weight') else tuple()
+        
+        raise ValueError(f"Shape for layer {layer} not found or not computed yet.")
+    
+    def compute_shapes(self, input_shape: Tuple[int, ...]) -> None:
+        """
+        Compute and store the shapes of all layers in the model.
+        """
+        x = torch.randn(input_shape)
+        self._layer_shapes[0] = input_shape
 
+        for i, (name, module) in enumerate(self.named_modules(), 1):
+            if isinstance(module, nn.Module) and not isinstance(module, nn.Sequential):
+                x: torch.Tensor = module(x)
+                self._layer_shapes[i] = tuple(x.shape[1:])
+                self._layer_shapes[name] = tuple(x.shape[1:])
+
+        self.input_shape = input_shape
+        self.output_shape = tuple(x.shape[1:])
+        self._layer_shapes[-1] = self.output_shape
+    
     def summary(self, input_size: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
         """
         Print a summary of the model architecture with additional options.
@@ -130,7 +210,7 @@ class BaseModel(nn.Module, ABC):
 
     def to_onnx(self, file_path: str, input_shape: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
         """
-        Export the model to ONNX format with additional options.
+        Export the model to ONNX format.
         """
         if input_shape is None and self.input_shape is None:
             raise ValueError("Please provide input_shape or set input_shape for the model.")
