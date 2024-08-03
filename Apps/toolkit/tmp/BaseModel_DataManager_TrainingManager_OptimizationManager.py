@@ -1,23 +1,23 @@
 from tqdm import tqdm
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Literal, Optional, Union, List, Tuple
+from typing import Any, Dict, Iterable, Literal, Optional, Union, List, Tuple
 from loguru import logger
 from pydantic import BaseModel, Field
 from tensorboardX import SummaryWriter
 from torchvision import transforms
 import torch
 import torch.nn as nn
+import torchmetrics
 from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.model_selection import train_test_split
 from torchinfo import summary as torch_summary
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, CosineAnnealingLR
 from torch.cuda.amp import GradScaler, autocast
 
-
 class BaseModel(nn.Module, ABC):
     """
-    Abstract base class for all models in the framework.
+    Enhanced abstract base class for all models in the framework.
     """
 
     def __init__(self):
@@ -25,6 +25,7 @@ class BaseModel(nn.Module, ABC):
         self.model_type: Optional[str] = None
         self.input_shape: Optional[Tuple[int, ...]] = None
         self.output_shape: Optional[Tuple[int, ...]] = None
+        self.task_type: Optional[str] = None
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -56,47 +57,43 @@ class BaseModel(nn.Module, ABC):
 
     def get_info(self) -> Dict[str, Any]:
         """
-        Get information about the model.
+        Get comprehensive information about the model.
         """
         return {
             "model_type": self.model_type,
+            "task_type": self.task_type,
             "input_shape": self.input_shape,
             "output_shape": self.output_shape,
             "num_parameters": sum(p.numel() for p in self.parameters()),
             "trainable_parameters": sum(p.numel() for p in self.parameters() if p.requires_grad),
+            "model_size_mb": sum(p.numel() * p.element_size() for p in self.parameters()) / (1024 * 1024),
+            "layers": [f"{name}: {module.__class__.__name__}" for name, module in self.named_children()],
         }
 
-    def set_model_type(self, model_type: str) -> None:
+    def set_model_attributes(self, model_type: str, task_type: str, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...]) -> None:
         """
-        Set the model type (e.g., 'vision', 'nlp', 'tabular').
+        Set multiple model attributes at once.
         """
         self.model_type = model_type
-
-    def set_input_shape(self, input_shape: Tuple[int, ...]) -> None:
-        """
-        Set the input shape of the model.
-        """
+        self.task_type = task_type
         self.input_shape = input_shape
-
-    def set_output_shape(self, output_shape: Tuple[int, ...]) -> None:
-        """
-        Set the output shape of the model.
-        """
         self.output_shape = output_shape
 
-    def freeze(self) -> None:
+    def freeze_layers(self, layer_names: List[str]) -> None:
         """
-        Freeze all model parameters.
+        Freeze specified layers of the model.
         """
-        for param in self.parameters():
-            param.requires_grad = False
+        for name, param in self.named_parameters():
+            if any(layer_name in name for layer_name in layer_names):
+                param.requires_grad = False
 
-    def unfreeze(self) -> None:
+    def unfreeze_layers(self, layer_names: List[str]) -> None:
         """
-        Unfreeze all model parameters.
+        Unfreeze specified layers of the model.
         """
-        for param in self.parameters():
-            param.requires_grad = True
+        for name, param in self.named_parameters():
+            if any(layer_name in name for layer_name in layer_names):
+                param.requires_grad = True
 
     def get_trainable_params(self) -> Dict[str, nn.Parameter]:
         """
@@ -104,11 +101,12 @@ class BaseModel(nn.Module, ABC):
         """
         return {name: param for name, param in self.named_parameters() if param.requires_grad}
 
-    def load_pretrained_weights(self, weights_path: str) -> None:
+    def load_pretrained_weights(self, weights_path: str, strict: bool = True) -> None:
         """
-        Load pretrained weights into the model.
+        Load pretrained weights into the model with option for non-strict loading.
         """
-        self.load_state_dict(torch.load(weights_path))
+        state_dict = torch.load(weights_path)
+        self.load_state_dict(state_dict, strict=strict)
 
     def get_layer_output(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
         """
@@ -120,27 +118,55 @@ class BaseModel(nn.Module, ABC):
                 return x
         raise ValueError(f"Layer {layer_name} not found in the model.")
 
-    def summary(self, input_size: Optional[Tuple[int, ...]] = None) -> None:
+    def summary(self, input_size: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
         """
-        Print a summary of the model architecture.
+        Print a summary of the model architecture with additional options.
         """
-        
         if input_size is None and self.input_shape is None:
             raise ValueError("Please provide input_size or set input_shape for the model.")
         
         input_size = input_size or self.input_shape
-        torch_summary(self, input_size=input_size)
+        torch_summary(self, input_size=input_size, **kwargs)
 
-    def to_onnx(self, file_path: str, input_shape: Optional[Tuple[int, ...]] = None) -> None:
+    def to_onnx(self, file_path: str, input_shape: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
         """
-        Export the model to ONNX format.
+        Export the model to ONNX format with additional options.
         """
         if input_shape is None and self.input_shape is None:
             raise ValueError("Please provide input_shape or set input_shape for the model.")
         
         input_shape = input_shape or self.input_shape
         dummy_input = torch.randn(input_shape)
-        torch.onnx.export(self, dummy_input, file_path, verbose=True)
+        torch.onnx.export(self, dummy_input, file_path, verbose=True, **kwargs)
+
+    def get_layer(self, layer_name: str) -> nn.Module:
+        """
+        Get a specific layer of the model by name.
+        """
+        for name, module in self.named_modules():
+            if name == layer_name:
+                return module
+        raise ValueError(f"Layer {layer_name} not found in the model.")
+
+    def apply_weight_initialization(self, init_func: callable) -> None:
+        """
+        Apply a weight initialization function to all the model's parameters.
+        """
+        self.apply(init_func)
+
+    def get_activation_maps(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
+        """
+        Get activation maps for a specific layer.
+        """
+        activation = {}
+        def get_activation(name):
+            def hook(model, input, output):
+                activation[name] = output.detach()
+            return hook
+
+        self.get_layer(layer_name).register_forward_hook(get_activation(layer_name))
+        self.forward(x)
+        return activation[layer_name]
 
 class CustomDataset(Dataset, ABC):
     """
@@ -289,6 +315,47 @@ class DataManager(ABC):
 
         return train_loader, val_loader, test_loader
 
+class MetricsManager(ABC):
+    def __init__(self, metrics_config: List[Dict[str, Any]], device: str = 'cpu') -> None:
+        super().__init__()
+        self.metrics: Dict[str, torchmetrics.Metric] = {}
+        self.device = device
+        self._initialize_metrics(metrics_config)
+
+    def _initialize_metrics(self, metrics_config: List[Dict[str, Any]]) -> None:
+        for metric_info in metrics_config:
+            metric_name = metric_info['name']
+            metric_class = getattr(torchmetrics, metric_info['class'])
+            metric_params = metric_info.get('params', {})
+            self.metrics[metric_name] = metric_class(**metric_params).to(self.device)
+
+    def update(self, outputs: torch.Tensor, targets: torch.Tensor) -> None:
+        for metric in self.metrics.values():
+            metric.update(outputs, targets)
+
+    def compute(self) -> Dict[str, torch.Tensor]:
+        return {name: metric.compute() for name, metric in self.metrics.items()}
+
+    def reset(self) -> None:
+        for metric in self.metrics.values():
+            metric.reset()
+
+    def get_metric(self, name: str) -> torchmetrics.Metric:
+        return self.metrics[name]
+
+    def add_metric(self, name: str, metric: torchmetrics.Metric) -> None:
+        self.metrics[name] = metric.to(self.device)
+
+    def remove_metric(self, name: str) -> None:
+        if name in self.metrics:
+            del self.metrics[name]
+
+    def to(self, device: str) -> 'MetricsManager':
+        self.device = device
+        for metric in self.metrics.values():
+            metric.to(device)
+        return self
+
 class TrainingParams(BaseModel):
     """
     Pydantic model for all training parameters.
@@ -326,6 +393,7 @@ class TrainingManager(ABC):
         model: nn.Module,
         loss_fn: nn.Module,
         train_params: TrainingParams,
+        metrics_config: List[Dict[str, Any]]
     ) -> None:
         self.train_data_loader = train_data_loader
         self.val_data_loader = val_data_loader
@@ -343,6 +411,8 @@ class TrainingManager(ABC):
         
         self.best_val_loss = float('inf')
         self.patience_counter = 0
+        
+        self.metrics_manager = MetricsManager(metrics_config, device=self.train_params.device)
 
     def _get_optimizer(self) -> torch.optim.Optimizer:
         if self.train_params.optimizer.lower() == 'adam':
@@ -371,21 +441,53 @@ class TrainingManager(ABC):
             torch.cuda.manual_seed_all(seed)
 
     @abstractmethod
-    def train_step(self, batch: Any) -> Dict[str, float]:
+    def train_step(self, batch: Iterable[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
         """
         Perform a single training step.
         """
-        pass
+        inputs, targets = batch
+        inputs, targets = inputs.to(self.train_params.device), targets.to(self.train_params.device)
+
+        self.optimizer.zero_grad()
+
+        if self.train_params.use_mixed_precision:
+            with torch.cuda.amp.autocast():
+                outputs = self.model(inputs)
+                loss: torch.Tensor = self.loss_fn(outputs, targets)
+            
+            self.scaler.scale(loss).backward()
+            if self.train_params.clip_grad_norm:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            outputs = self.model(inputs)
+            loss = self.loss_fn(outputs, targets)
+            loss.backward()
+            if self.train_params.clip_grad_norm:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
+            self.optimizer.step()
+
+        self.metrics_manager.update(outputs, targets)
+        return {'loss': loss.item()}
+
 
     @abstractmethod
-    def val_step(self, batch: Any) -> Dict[str, float]:
-        """
-        Perform a single validation step.
-        """
-        pass
+    def val_step(self, batch: Iterable[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
+        inputs, targets = batch
+        inputs, targets = inputs.to(self.train_params.device), targets.to(self.train_params.device)
+
+        with torch.no_grad():
+            outputs = self.model(inputs)
+            loss = self.loss_fn(outputs, targets)
+
+        self.metrics_manager.update(outputs, targets)
+        return {'loss': loss.item()}
 
     def train_epoch(self, epoch: int) -> Dict[str, float]:
         self.model.train()
+        self.metrics_manager.reset()
         total_loss = 0.0
         num_batches = len(self.train_data_loader)
         
@@ -395,15 +497,20 @@ class TrainingManager(ABC):
                 total_loss += step_results['loss']
                 
                 if i % self.train_params.log_interval == 0:
-                    self._log_progress('train', epoch, i, step_results)
+                    metrics = self.metrics_manager.compute()
+                    metrics['loss'] = step_results['loss']
+                    self._log_progress('train', epoch, i, metrics)
                 
                 pbar.update(1)
                 pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
         
-        return {'loss': total_loss / num_batches}
+        metrics = self.metrics_manager.compute()
+        metrics['loss'] = total_loss / num_batches
+        return metrics
 
     def validate(self, epoch: int) -> Dict[str, float]:
         self.model.eval()
+        self.metrics_manager.reset()
         total_loss = 0.0
         num_batches = len(self.val_data_loader)
         
@@ -412,9 +519,10 @@ class TrainingManager(ABC):
                 step_results = self.val_step(batch)
                 total_loss += step_results['loss']
         
-        avg_loss = total_loss / num_batches
-        self._log_progress('val', epoch, 0, {'loss': avg_loss})
-        return {'loss': avg_loss}
+        metrics = self.metrics_manager.compute()
+        metrics['loss'] = total_loss / num_batches
+        self._log_progress('val', epoch, 0, metrics)
+        return metrics
 
     def train_loop(self) -> None:
         for epoch in range(self.train_params.epochs):
@@ -472,10 +580,14 @@ class TrainingManager(ABC):
         self.train_params = TrainingParams(**checkpoint['train_params'])
         logger.info(f"Model loaded from {path}")
 
-    def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, float]) -> None:
+    def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, torch.Tensor]]) -> None:
         if self.train_params.use_tensorboard:
             for metric_name, metric_value in metrics.items():
                 self.writer.add_scalar(f"{phase}/{metric_name}", metric_value, epoch * len(self.train_data_loader) + step)
+        
+        log_str = f"{phase.capitalize()} Epoch {epoch+1}, Step {step}: "
+        log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
+        logger.info(log_str)
 
 class OptimizationManager:
     """
