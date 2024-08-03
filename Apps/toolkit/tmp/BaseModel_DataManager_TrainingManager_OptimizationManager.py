@@ -1,7 +1,7 @@
 from tqdm import tqdm
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, Literal, Optional, Union, List, Tuple
+from typing import Any, Dict, Literal, Optional, Union, List, Tuple
 from loguru import logger
 from pydantic import BaseModel, Field
 from tensorboardX import SummaryWriter
@@ -355,9 +355,127 @@ class MetricsManager(ABC):
             metric.to(device)
         return self
 
-class ModelStorageManager(ABC):
-  def __init__(self) -> None:
-      super().__init__()
+class ModelStorageManager:
+    """
+    Class for managing model storage, including saving and loading models.
+    """
+
+    def __init__(self, base_dir: str = "checkpoints") -> None:
+        self.base_dir = base_dir
+        os.makedirs(self.base_dir, exist_ok=True)
+
+    def save_model(
+      self, 
+      model: torch.nn.Module, 
+      optimizer: torch.optim.Optimizer, 
+      train_params: Dict[str, Any], 
+      epoch: int, 
+      metrics: Dict[str, float],
+      filename: Optional[str] = None
+    ) -> str:
+        """
+        Save the model, optimizer state, training parameters, and metrics.
+        """
+        if filename is None:
+            filename = f'model_epoch_{epoch}.pth'
+        
+        path = os.path.join(self.base_dir, filename)
+        
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_params': train_params,
+            'metrics': metrics
+        }, path)
+        
+        logger.info(f"Model saved to {path}")
+        return path
+
+    def load_model(
+      self, 
+      model: torch.nn.Module, 
+      optimizer: torch.optim.Optimizer,
+      path: str, 
+      device: str = 'cpu'
+    ) -> Dict[str, Any]:
+        """
+        Load a saved model and return related information.
+        """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No model found at {path}")
+
+        checkpoint = torch.load(path, map_location=device)
+        
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        logger.info(f"Model loaded from {path}")
+        
+        return {
+            'epoch': checkpoint['epoch'],
+            'train_params': checkpoint['train_params'],
+            'metrics': checkpoint['metrics']
+        }
+
+    def list_saved_models(self) -> List[str]:
+        """
+        List all saved model files in the base directory.
+        """
+        return [f for f in os.listdir(self.base_dir) if f.endswith('.pth')]
+
+    def delete_model(self, filename: str) -> None:
+        """
+        Delete a saved model file.
+        """
+        path = os.path.join(self.base_dir, filename)
+        if os.path.exists(path):
+            os.remove(path)
+            logger.info(f"Deleted model: {path}")
+        else:
+            logger.warning(f"No model found at {path}")
+
+    def get_latest_model(self) -> Optional[str]:
+        """
+        Get the filename of the latest saved model based on modification time.
+        """
+        models = self.list_saved_models()
+        if not models:
+            return None
+        return max(models, key=lambda f: os.path.getmtime(os.path.join(self.base_dir, f)))
+    
+    def to_torchscript(self, model: torch.nn.Module, input_shape: Optional[Tuple[int, ...]] = None, filename: Optional[str] = None) -> str:
+        """
+        Convert the model to TorchScript and save it.
+        """
+        if input_shape is None:
+            if hasattr(model, 'input_shape'):
+                input_shape = model.input_shape
+            else:
+                raise ValueError("Please provide input_shape or ensure the model has an input_shape attribute.")
+        
+        example_input = torch.randn(input_shape)
+        traced_model = torch.jit.trace(model, example_input)
+
+        if filename is None:
+            filename = f"{model.__class__.__name__}_torchscript.pt"
+        
+        path = os.path.join(self.base_dir, filename)
+        torch.jit.save(traced_model, path)
+        
+        logger.info(f"TorchScript model saved to {path}")
+        return path
+
+    def load_torchscript(self, path: str) -> torch.jit.ScriptModule:
+        """
+        Load a TorchScript model.
+        """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No TorchScript model found at {path}")
+
+        model = torch.jit.load(path)
+        logger.info(f"TorchScript model loaded from {path}")
+        return model    
   
 class TrainingParams(BaseModel):
     """
@@ -404,6 +522,7 @@ class TrainingManager(ABC):
         self.model = model
         self.loss_fn = loss_fn
         self.train_params = train_params
+        self.model_storage = ModelStorageManager(self.train_params.checkpoint_dir)
         
         self.optimizer = self._get_optimizer()
         self.scheduler = self._get_scheduler() if self.train_params.use_scheduler else None
@@ -438,6 +557,12 @@ class TrainingManager(ABC):
         self.model.to(self.train_params.device)
         self.loss_fn.to(self.train_params.device)
 
+    def load_model(self, path: str) -> None:
+        loaded_info = self.model_storage.load_model(self.model, self.optimizer, path, self.train_params.device)
+        self.train_params = TrainingParams(**loaded_info['train_params'])
+        logger.info(f"Model loaded from {path}")
+        logger.info(f"Loaded model info: Epoch {loaded_info['epoch']}, Metrics: {loaded_info['metrics']}")
+    
     def set_seed(self, seed: int) -> None:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -541,7 +666,14 @@ class TrainingManager(ABC):
                 
                 if val_results['loss'] < self.best_val_loss:
                     self.best_val_loss = val_results['loss']
-                    self.save_model(os.path.join(self.train_params.checkpoint_dir, 'best_model.pth'))
+                    self.model_storage.save_model(
+                        self.model, 
+                        self.optimizer, 
+                        self.train_params.dict(), 
+                        epoch, 
+                        val_results, 
+                        'best_model.pth'
+                    )
                     self.patience_counter = 0
                 else:
                     self.patience_counter += 1
@@ -550,7 +682,13 @@ class TrainingManager(ABC):
                     logger.info(f"Early stopping triggered after {epoch+1} epochs")
                     break
             
-            self.save_model(os.path.join(self.train_params.checkpoint_dir, f'model_epoch_{epoch+1}.pth'))
+            self.model_storage.save_model(
+                self.model, 
+                self.optimizer, 
+                self.train_params.dict(), 
+                epoch, 
+                train_results
+            )
 
     def test_loop(self) -> Dict[str, float]:
         self.model.eval()
@@ -565,22 +703,6 @@ class TrainingManager(ABC):
         avg_loss = total_loss / num_batches
         logger.info(f"Test Loss: {avg_loss:.4f}")
         return {'loss': avg_loss}
-
-    def save_model(self, path: str) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'train_params': self.train_params.dict(),
-        }, path)
-        logger.info(f"Model saved to {path}")
-
-    def load_model(self, path: str) -> None:
-        checkpoint = torch.load(path)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.train_params = TrainingParams(**checkpoint['train_params'])
-        logger.info(f"Model loaded from {path}")
 
     def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, torch.Tensor]]) -> None:
         if self.train_params.use_tensorboard:
