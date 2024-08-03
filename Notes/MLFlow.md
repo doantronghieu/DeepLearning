@@ -22,17 +22,25 @@
 
 ## [Deployment](https://mlflow.org/docs/latest/deployment/index.html)
 
+### [Deploy MLflow models with KServe InferenceService](https://kserve.github.io/website/latest/modelserving/v1beta1/mlflow/v2/)
+
 ### [Deploy MLflow Model to Kubernetes](https://mlflow.org/docs/latest/deployment/deploy-model-to-kubernetes/index.html)
 
-...
+#### [Develop ML model with MLflow and deploy to Kubernetes](https://mlflow.org/docs/latest/deployment/deploy-model-to-kubernetes/tutorial.html)
 
 ## [MLflow Tracking](https://mlflow.org/docs/latest/tracking.html)
+
+### [Quickstart](https://mlflow.org/docs/latest/getting-started/intro-quickstart/index.html)
+
+...
 
 ## [System Metrics](https://mlflow.org/docs/latest/system-metrics/index.html)
 
 ## [MLflow Projects](https://mlflow.org/docs/latest/projects.html)
 
 ## [MLflow Models](https://mlflow.org/docs/latest/models.html)
+
+...
 
 ## [MLflow Model Registry](https://mlflow.org/docs/latest/model-registry.html)
 
