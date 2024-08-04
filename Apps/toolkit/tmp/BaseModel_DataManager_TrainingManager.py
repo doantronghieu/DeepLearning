@@ -106,7 +106,7 @@ class BaseModel(nn.Module, ABC):
             if any(layer_name in name for layer_name in layer_names):
                 param.requires_grad = True
         logger.info(f"Unfrozen layers: {layer_names}")
-
+    
     def get_trainable_params(self) -> Dict[str, nn.Parameter]:
         """Get all trainable parameters of the model."""
         return {name: param for name, param in self.named_parameters() if param.requires_grad}
@@ -128,7 +128,7 @@ class BaseModel(nn.Module, ABC):
         """Get the output of a specific layer given an input tensor."""
         output = {}
 
-        def hook(module, input, out):
+        def hook(module: nn.Module, input: Any, out: torch.Tensor) -> None:
             output['value'] = out
 
         layer = self.get_layer(layer_name)
@@ -139,7 +139,7 @@ class BaseModel(nn.Module, ABC):
         if 'value' not in output:
             raise ValueError(f"Layer {layer_name} did not produce any output.")
         return output['value']
-    
+
     def get_layer(self, layer_name: str) -> nn.Module:
         """Get a specific layer of the model by name."""
         for name, module in self.named_modules():
@@ -161,24 +161,24 @@ class BaseModel(nn.Module, ABC):
                 return self._layer_shapes[layer]
         elif isinstance(layer, str):
             for name, module in self.named_modules():
-                if name == layer:
-                    return tuple(module.weight.shape) if hasattr(module, 'weight') else tuple()
+                if name == layer and hasattr(module, 'weight'):
+                    return tuple(module.weight.shape)
 
         raise ValueError(f"Shape for layer {layer} not found or not computed yet.")
-    
+
     def compute_shapes(self, input_shape: Tuple[int, ...]) -> None:
         """Compute and store the shapes of all layers in the model."""
-        def hook(module, input, output):
+        def hook(module: nn.Module, input: Any, output: torch.Tensor) -> None:
             self._layer_shapes[len(self._layer_shapes)] = tuple(output.shape[1:])
 
         self._layer_shapes.clear()
         self._layer_shapes[0] = input_shape
 
-        for name, module in self.named_modules():
-            if isinstance(module, nn.Module) and not isinstance(module, nn.Sequential):
+        for module in self.modules():
+            if not isinstance(module, nn.Sequential):
                 self._hooks.append(module.register_forward_hook(hook))
 
-        dummy_input = torch.randn(input_shape)
+        dummy_input = torch.randn(input_shape).to(self.device)
         self(dummy_input)
 
         for hook in self._hooks:
@@ -187,7 +187,7 @@ class BaseModel(nn.Module, ABC):
 
         self.input_shape = input_shape
         self.output_shape = self._layer_shapes[max(self._layer_shapes.keys())]
-        
+    
     def summary(self, input_size: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
         """Print a summary of the model architecture with additional options."""
         from torchinfo import summary as torch_summary
@@ -206,8 +206,8 @@ class BaseModel(nn.Module, ABC):
         """Get activation maps for a specific layer."""
         activation = {}
 
-        def get_activation(name):
-            def hook(model, input, output):
+        def get_activation(name: str) -> callable:
+            def hook(model: nn.Module, input: Any, output: torch.Tensor) -> None:
                 activation[name] = output.detach()
             return hook
 
