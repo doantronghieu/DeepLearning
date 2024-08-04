@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import os
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Callable, Any, Dict, Literal, Optional, Union, List, Tuple
 from loguru import logger
 import numpy as np
@@ -15,7 +16,6 @@ from torchmetrics import Metric
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.hooks import RemovableHandle
 from sklearn.model_selection import train_test_split
-from torchinfo import summary as torch_summary
 from torch.cuda.amp import GradScaler, autocast
 
 class BaseModel(nn.Module, ABC):
@@ -292,33 +292,57 @@ class BaseModel(nn.Module, ABC):
         return activation[layer_name]
 
 class DataParams(BaseModel):
-    """Configuration parameters for dataset management."""
+    """
+    Configuration parameters for dataset management.
 
-    data_path: Union[str, List[str]] = Field(..., description="Path(s) to the dataset")
-    task_type: str = Field(..., description="Type of task (e.g., 'vision', 'nlp', 'tabular')")
+    This class encapsulates all necessary parameters for managing datasets
+    in machine learning tasks, including data paths, task types, loading
+    configurations, and data processing options.
+    """
+
+    class TaskType(str, Enum):
+        VISION = "vision"
+        NLP = "nlp"
+        TABULAR = "tabular"
+        AUDIO = "audio"
+        TIME_SERIES = "time_series"
+
+    class SampleStrategy(str, Enum):
+        RANDOM = "random"
+        STRATIFIED = "stratified"
+    
+    # Data source and type
+    data_path: str | List[str] = Field(..., description="Path(s) to the dataset")
+    task_type: TaskType = Field(..., description="Type of machine learning task")
+
+    # Data loading parameters
     batch_size: int = Field(32, ge=1, description="Batch size for data loading")
     num_workers: int = Field(4, ge=0, description="Number of workers for data loading")
     shuffle: bool = Field(True, description="Whether to shuffle the dataset")
+
+    # Data splitting parameters
     validation_split: float = Field(0.2, ge=0.0, le=1.0, description="Fraction of data to use for validation")
     test_split: float = Field(0.1, ge=0.0, le=1.0, description="Fraction of data to use for testing")
+
+    # Data processing options
     transforms: Optional[Dict[str, Any]] = Field(None, description="Transform configurations")
+    augmentations: Optional[Dict[str, Any]] = Field(None, description="Data augmentation configurations")
+
+    # Model input parameters
     input_size: Optional[Tuple[int, ...]] = Field(None, description="Input size for the model")
     num_classes: Optional[int] = Field(None, ge=1, description="Number of classes for classification tasks")
     class_names: Optional[List[str]] = Field(None, description="List of class names")
-    augmentations: Optional[Dict[str, Any]] = Field(None, description="Data augmentation configurations")
-    sample_strategy: str = Field("random", description="Strategy for sampling data (e.g., 'random', 'stratified')")
+
+    # Advanced options
+    sample_strategy: SampleStrategy = Field(SampleStrategy.RANDOM, description="Strategy for sampling data")
     cache_data: bool = Field(False, description="Whether to cache data in memory")
     distributed: bool = Field(False, description="Whether to use distributed data loading")
 
-    class Config:
-        arbitrary_types_allowed = True
+    # Custom parameters for flexibility
+    custom_params: Optional[Dict[str, Any]] = Field(None, description="Custom parameters for specific tasks")
 
-    @field_validator('task_type')
-    def validate_task_type(cls, v):
-        accepted_tasks = {'vision', 'nlp', 'tabular', 'audio', 'time_series'}
-        if v not in accepted_tasks:
-            raise ValueError(f"task_type must be one of {accepted_tasks}")
-        return v
+    class Config:
+        use_enum_values = True
 
     @field_validator('validation_split', 'test_split')
     def validate_splits(cls, v):
@@ -333,6 +357,41 @@ class DataParams(BaseModel):
             if len(v) != num_classes:
                 raise ValueError(f"Number of class names ({len(v)}) does not match num_classes ({num_classes})")
         return v
+
+    def get_split_sizes(self) -> Tuple[float, float, float]:
+        """
+        Calculate the split sizes for train, validation, and test sets.
+
+        Returns:
+            Tuple[float, float, float]: Proportions for train, validation, and test sets.
+        """
+        test_size = self.test_split
+        val_size = self.validation_split * (1 - test_size)
+        train_size = 1 - test_size - val_size
+        return train_size, val_size, test_size
+
+    def get_transform_config(self, phase: str) -> Dict[str, Any]:
+        """
+        Get the transform configuration for a specific phase.
+
+        Args:
+            phase (str): The dataset phase ('train', 'val', or 'test').
+
+        Returns:
+            Dict[str, Any]: Transform configuration for the specified phase.
+        """
+        if self.transforms is None:
+            return {}
+        return self.transforms.get(phase, {})
+
+    def get_augmentation_config(self) -> Dict[str, Any]:
+        """
+        Get the data augmentation configuration.
+
+        Returns:
+            Dict[str, Any]: Data augmentation configuration.
+        """
+        return self.augmentations or {}
 
 class DataManager(ABC):
     """Abstract base class for data management."""
@@ -367,10 +426,9 @@ class DataManager(ABC):
                 transforms[phase] = self._create_transform_pipeline(config)
         return transforms
 
+    @abstractmethod
     def _create_transform_pipeline(self, config: Dict[str, Any]) -> Any:
         """Create a transform pipeline based on the configuration."""
-        # Implement the logic to create a transform pipeline
-        # This could involve using libraries like torchvision.transforms or custom transforms
         raise NotImplementedError("Subclass must implement this method")
 
     def setup(self) -> None:
@@ -386,35 +444,38 @@ class DataManager(ABC):
 
     def _split_data(self, data: Any) -> None:
         """Split the data into train, validation, and test sets."""
-        if self.params.sample_strategy == "stratified" and self.params.task_type == "classification":
-            split_func = self._stratified_split
-        else:
-            split_func = train_test_split
+        split_func = self._get_split_function()
+        train_data, val_data, test_data = self._perform_splits(data, split_func)
+        
+        self.train_dataset = self.create_dataset(train_data, is_train=True)
+        self.val_dataset = self.create_dataset(val_data, is_train=False) if val_data is not None else None
+        self.test_dataset = self.create_dataset(test_data, is_train=False) if test_data is not None else None
 
+    def _get_split_function(self):
+        if self.params.sample_strategy == DataParams.SampleStrategy.STRATIFIED and self.params.task_type == DataParams.TaskType.VISION:
+            return self._stratified_split
+        return train_test_split
+
+    def _perform_splits(self, data: Any, split_func) -> Tuple[Any, Any, Any]:
         if self.params.test_split > 0:
-            train_val_data, test_data = split_func(
-                data,
-                test_size=self.params.test_split,
-                random_state=42
-            )
-            self.test_dataset = self.create_dataset(test_data, is_train=False)
+            train_val_data, test_data = split_func(data, test_size=self.params.test_split, random_state=42)
+            if self.params.validation_split > 0:
+                train_data, val_data = split_func(
+                    train_val_data,
+                    test_size=self.params.validation_split / (1 - self.params.test_split),
+                    random_state=42
+                )
+            else:
+                train_data, val_data = train_val_data, None
         else:
-            train_val_data = data
+            train_data, val_data = split_func(data, test_size=self.params.validation_split, random_state=42) if self.params.validation_split > 0 else (data, None)
+            test_data = None
+        
+        return train_data, val_data, test_data
 
-        if self.params.validation_split > 0:
-            train_data, val_data = split_func(
-                train_val_data,
-                test_size=self.params.validation_split / (1 - self.params.test_split),
-                random_state=42
-            )
-            self.train_dataset = self.create_dataset(train_data, is_train=True)
-            self.val_dataset = self.create_dataset(val_data, is_train=False)
-        else:
-            self.train_dataset = self.create_dataset(train_val_data, is_train=True)
-
+    @abstractmethod
     def _stratified_split(self, data: Any, test_size: float, random_state: int) -> Tuple[Any, Any]:
         """Perform a stratified split of the data."""
-        # Implement stratified split logic here
         raise NotImplementedError("Subclass must implement this method")
 
     def get_data_loaders(self) -> Tuple[DataLoader, Optional[DataLoader], Optional[DataLoader]]:
@@ -447,7 +508,7 @@ class DataManager(ABC):
 
     def get_class_weights(self) -> Optional[torch.Tensor]:
         """Calculate class weights for imbalanced datasets."""
-        if self.params.task_type != 'classification' or not self.train_dataset:
+        if self.params.task_type != DataParams.TaskType.VISION or not self.train_dataset:
             return None
 
         labels = [sample[1] for sample in self.train_dataset]
@@ -467,7 +528,7 @@ class DataManager(ABC):
             "input_size": self.params.input_size,
         }
 
-        if self.params.task_type == 'classification' and self.train_dataset:
+        if self.params.task_type == DataParams.TaskType.VISION and self.train_dataset:
             stats["class_distribution"] = self.get_class_distribution(self.train_dataset)
 
         return stats
@@ -481,34 +542,29 @@ class DataManager(ABC):
 
     def get_sample(self, index: int, dataset: str = 'train') -> Tuple[Any, Any]:
         """Get a specific sample from the specified dataset."""
-        if dataset == 'train' and self.train_dataset:
-            return self.train_dataset[index]
-        elif dataset == 'val' and self.val_dataset:
-            return self.val_dataset[index]
-        elif dataset == 'test' and self.test_dataset:
-            return self.test_dataset[index]
-        else:
+        dataset_map = {
+            'train': self.train_dataset,
+            'val': self.val_dataset,
+            'test': self.test_dataset
+        }
+        selected_dataset = dataset_map.get(dataset)
+        if not selected_dataset:
             raise ValueError(f"Invalid dataset specified or dataset not available: {dataset}")
+        return selected_dataset[index]
 
+    @abstractmethod
     def apply_augmentations(self, data: Any) -> Any:
         """Apply data augmentations to the input data."""
-        if not self.params.augmentations:
-            return data
-        # Implement augmentation logic here
         raise NotImplementedError("Subclass must implement this method")
 
+    @abstractmethod
     def cache_dataset(self, dataset: Dataset) -> Dataset:
         """Cache the entire dataset in memory for faster access."""
-        if not self.params.cache_data:
-            return dataset
-        # Implement caching logic here
         raise NotImplementedError("Subclass must implement this method")
 
+    @abstractmethod
     def setup_distributed(self) -> None:
         """Set up distributed data loading if enabled."""
-        if not self.params.distributed:
-            return
-        # Implement distributed setup logic here
         raise NotImplementedError("Subclass must implement this method")
 
 class MetricsManager:

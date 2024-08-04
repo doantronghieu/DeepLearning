@@ -3,3 +3,14 @@ Add support for distributed training and multi-GPU setups.
 Implement a more sophisticated checkpointing system that can resume training from any point.
 Add support for experiment tracking tools like MLflow or Weights & Biases.
 Implement a plugin system for easy extension of functionality (e.g., custom metrics, loss functions, optimizers).
+
+## DataParams
+
+Implement unit tests to ensure the correct functioning of all methods and validators.
+Consider adding more task-specific validations in the validate_task_specific_params method as the project evolves.
+If the project grows, consider splitting this into multiple classes (e.g., VisionDataParams, NLPDataParams) that inherit from a base DataParams class.
+Regularly review and update the custom_params field to ensure it meets evolving project needs.
+Consider adding a method to generate a configuration file (e.g., YAML or JSON) from the DataParams instance for easy saving and loading of configurations.
+Implement a factory method that creates appropriate DataParams subclasses based on the task type if task-specific parameters become more complex.
+</evaluation_and_recommendations>
+</file_review>
