@@ -221,45 +221,42 @@ class BaseModel(nn.Module, ABC):
         return activation[layer_name]
 
 class DataParams(BaseModel):
-    """
-    Pydantic model for all data-related parameters.
-    This class defines the structure and validation rules for dataset configuration.
-    """
+    """Configuration parameters for dataset management."""
 
     data_path: Union[str, List[str]] = Field(..., description="Path(s) to the dataset")
-    task_type: Optional[str] = Field(..., description="Type of task (e.g., 'vision', 'nlp', 'tabular')")
+    task_type: str = Field(..., description="Type of task (e.g., 'vision', 'nlp', 'tabular')")
     batch_size: int = Field(32, ge=1, description="Batch size for data loading")
     num_workers: int = Field(4, ge=0, description="Number of workers for data loading")
     shuffle: bool = Field(True, description="Whether to shuffle the dataset")
     validation_split: float = Field(0.2, ge=0.0, le=1.0, description="Fraction of data to use for validation")
     test_split: float = Field(0.1, ge=0.0, le=1.0, description="Fraction of data to use for testing")
     transforms: Optional[Dict[str, Any]] = Field(None, description="Transform configurations")
-    input_size: Optional[Tuple[int, ...]] = Field(None, description="Input size for the model (e.g., image dimensions)")
+    input_size: Optional[Tuple[int, ...]] = Field(None, description="Input size for the model")
     num_classes: Optional[int] = Field(None, ge=1, description="Number of classes for classification tasks")
     class_names: Optional[List[str]] = Field(None, description="List of class names")
     augmentations: Optional[Dict[str, Any]] = Field(None, description="Data augmentation configurations")
+    sample_strategy: str = Field("random", description="Strategy for sampling data (e.g., 'random', 'stratified')")
+    cache_data: bool = Field(False, description="Whether to cache data in memory")
+    distributed: bool = Field(False, description="Whether to use distributed data loading")
 
     class Config:
         arbitrary_types_allowed = True
 
     @field_validator('task_type')
     def validate_task_type(cls, v):
-        """Validate that the task type is one of the accepted values."""
-        accepted_tasks = {'vision', 'nlp', 'tabular'}
+        accepted_tasks = {'vision', 'nlp', 'tabular', 'audio', 'time_series'}
         if v not in accepted_tasks:
             raise ValueError(f"task_type must be one of {accepted_tasks}")
         return v
 
     @field_validator('validation_split', 'test_split')
     def validate_splits(cls, v):
-        """Validate that the split values are between 0 and 1."""
         if not 0 <= v <= 1:
             raise ValueError("Split values must be between 0 and 1")
         return v
 
     @field_validator('class_names')
-    def validate_class_names(cls, v, values: Dict):
-        """Validate that the number of class names matches num_classes if both are provided."""
+    def validate_class_names(cls, v, values):
         num_classes = values.get('num_classes')
         if num_classes is not None and v is not None:
             if len(v) != num_classes:
@@ -267,79 +264,43 @@ class DataParams(BaseModel):
         return v
 
 class DataManager(ABC):
-    """
-    Abstract base class for data management.
-    This class provides a framework for loading, preprocessing, and managing datasets.
-    """
+    """Abstract base class for data management."""
 
-    def __init__(self, params: DataParams) -> None:
-        """
-        Initialize the DataManager.
-
-        Args:
-            params (DataParams): Configuration parameters for data management.
-        """
+    def __init__(self, params: DataParams):
         self.params = params
         self.train_dataset: Optional[Dataset] = None
         self.val_dataset: Optional[Dataset] = None
         self.test_dataset: Optional[Dataset] = None
-        self.setup_transforms()
+        self.transforms = self.setup_transforms()
 
     @abstractmethod
     def load_data(self) -> Any:
-        """
-        Load the data from the specified path(s).
-
-        Returns:
-            Any: The loaded raw data.
-        """
+        """Load the data from the specified path(s)."""
         raise NotImplementedError("Subclass must implement abstract method")
 
     @abstractmethod
     def preprocess_data(self, data: Any) -> Any:
-        """
-        Preprocess the loaded data.
-
-        Args:
-            data (Any): The raw data to preprocess.
-
-        Returns:
-            Any: The preprocessed data.
-        """
+        """Preprocess the loaded data."""
         raise NotImplementedError("Subclass must implement abstract method")
 
     @abstractmethod
     def create_dataset(self, data: Any, is_train: bool = True) -> Dataset:
-        """
-        Create a dataset from the preprocessed data.
-
-        Args:
-            data (Any): The preprocessed data.
-            is_train (bool): Whether this is a training dataset.
-
-        Returns:
-            Dataset: The created dataset.
-        """
+        """Create a dataset from the preprocessed data."""
         raise NotImplementedError("Subclass must implement abstract method")
 
-    @abstractmethod
-    def setup_transforms(self) -> None:
+    def setup_transforms(self) -> Dict[str, Any]:
         """Set up transforms based on the task type and specified transforms."""
-        raise NotImplementedError("Subclass must implement abstract method")
+        transforms = {}
+        if self.params.transforms:
+            for phase, config in self.params.transforms.items():
+                transforms[phase] = self._create_transform_pipeline(config)
+        return transforms
 
-    @abstractmethod
-    def apply_transforms(self, data: Any, is_train: bool = True) -> Any:
-        """
-        Apply the specified transforms to the data.
-
-        Args:
-            data (Any): The data to transform.
-            is_train (bool): Whether this is for training data.
-
-        Returns:
-            Any: The transformed data.
-        """
-        raise NotImplementedError("Subclass must implement abstract method")
+    def _create_transform_pipeline(self, config: Dict[str, Any]) -> Any:
+        """Create a transform pipeline based on the configuration."""
+        # Implement the logic to create a transform pipeline
+        # This could involve using libraries like torchvision.transforms or custom transforms
+        raise NotImplementedError("Subclass must implement this method")
 
     def setup(self) -> None:
         """Set up the datasets for training, validation, and testing."""
@@ -354,8 +315,13 @@ class DataManager(ABC):
 
     def _split_data(self, data: Any) -> None:
         """Split the data into train, validation, and test sets."""
+        if self.params.sample_strategy == "stratified" and self.params.task_type == "classification":
+            split_func = self._stratified_split
+        else:
+            split_func = train_test_split
+
         if self.params.test_split > 0:
-            train_val_data, test_data = train_test_split(
+            train_val_data, test_data = split_func(
                 data,
                 test_size=self.params.test_split,
                 random_state=42
@@ -365,7 +331,7 @@ class DataManager(ABC):
             train_val_data = data
 
         if self.params.validation_split > 0:
-            train_data, val_data = train_test_split(
+            train_data, val_data = split_func(
                 train_val_data,
                 test_size=self.params.validation_split / (1 - self.params.test_split),
                 random_state=42
@@ -375,40 +341,38 @@ class DataManager(ABC):
         else:
             self.train_dataset = self.create_dataset(train_val_data, is_train=True)
 
+    def _stratified_split(self, data: Any, test_size: float, random_state: int) -> Tuple[Any, Any]:
+        """Perform a stratified split of the data."""
+        # Implement stratified split logic here
+        raise NotImplementedError("Subclass must implement this method")
+
     def get_data_loaders(self) -> Tuple[DataLoader, Optional[DataLoader], Optional[DataLoader]]:
         """Create and return data loaders for train, validation, and test datasets."""
         if not self.train_dataset:
             raise ValueError("Datasets are not set up. Call setup() first.")
 
-        train_loader = DataLoader(
-            self.train_dataset,
-            batch_size=self.params.batch_size,
-            shuffle=self.params.shuffle,
-            num_workers=self.params.num_workers,
-            collate_fn=self.collate_fn
-        )
-
-        val_loader = None
-        if self.val_dataset:
-            val_loader = DataLoader(
-                self.val_dataset,
-                batch_size=self.params.batch_size,
-                shuffle=False,
-                num_workers=self.params.num_workers,
-                collate_fn=self.collate_fn
-            )
-
-        test_loader = None
-        if self.test_dataset:
-            test_loader = DataLoader(
-                self.test_dataset,
-                batch_size=self.params.batch_size,
-                shuffle=False,
-                num_workers=self.params.num_workers,
-                collate_fn=self.collate_fn
-            )
+        train_loader = self._create_data_loader(self.train_dataset, shuffle=self.params.shuffle)
+        val_loader = self._create_data_loader(self.val_dataset) if self.val_dataset else None
+        test_loader = self._create_data_loader(self.test_dataset) if self.test_dataset else None
 
         return train_loader, val_loader, test_loader
+
+    def _create_data_loader(self, dataset: Dataset, shuffle: bool = False) -> DataLoader:
+        """Create a DataLoader for the given dataset."""
+        return DataLoader(
+            dataset,
+            batch_size=self.params.batch_size,
+            shuffle=shuffle,
+            num_workers=self.params.num_workers,
+            collate_fn=self.collate_fn,
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=self.params.num_workers > 0
+        )
+
+    @abstractmethod
+    def collate_fn(self, batch: List[Tuple[Any, Any]]) -> Tuple[Any, Any]:
+        """Custom collate function for DataLoader."""
+        raise NotImplementedError("Subclass must implement this method")
 
     def get_class_weights(self) -> Optional[torch.Tensor]:
         """Calculate class weights for imbalanced datasets."""
@@ -455,18 +419,25 @@ class DataManager(ABC):
         else:
             raise ValueError(f"Invalid dataset specified or dataset not available: {dataset}")
 
-    @abstractmethod
-    def collate_fn(self, batch: List[Tuple[Any, Any]]) -> Tuple[Any, Any]:
-        """
-        Custom collate function for DataLoader.
-        This method should be implemented in subclasses based on the specific data type.
+    def apply_augmentations(self, data: Any) -> Any:
+        """Apply data augmentations to the input data."""
+        if not self.params.augmentations:
+            return data
+        # Implement augmentation logic here
+        raise NotImplementedError("Subclass must implement this method")
 
-        Args:
-            batch (List[Tuple[Any, Any]]): A list of samples from the dataset.
+    def cache_dataset(self, dataset: Dataset) -> Dataset:
+        """Cache the entire dataset in memory for faster access."""
+        if not self.params.cache_data:
+            return dataset
+        # Implement caching logic here
+        raise NotImplementedError("Subclass must implement this method")
 
-        Returns:
-            Tuple[Any, Any]: A tuple containing batched data and labels.
-        """
+    def setup_distributed(self) -> None:
+        """Set up distributed data loading if enabled."""
+        if not self.params.distributed:
+            return
+        # Implement distributed setup logic here
         raise NotImplementedError("Subclass must implement this method")
 
 class MetricsManager:
