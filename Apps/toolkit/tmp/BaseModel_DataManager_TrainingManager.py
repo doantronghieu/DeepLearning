@@ -955,6 +955,51 @@ class TrainingParams(BaseModel):
 class TrainingManager:
     """Manages the training process for deep learning models."""
 
+    class AbstractProgressBar(ABC):
+        @abstractmethod
+        def update(self, n: int = 1):
+            pass
+
+        @abstractmethod
+        def set_postfix(self, **kwargs):
+            pass
+
+        @abstractmethod
+        def close(self):
+            pass
+
+    class TqdmProgressBar(AbstractProgressBar):
+        def __init__(self, total: int, desc: str):
+            self.pbar = tqdm(total=total, desc=desc, dynamic_ncols=True)
+
+        def update(self, n: int = 1):
+            self.pbar.update(n)
+
+        def set_postfix(self, **kwargs):
+            self.pbar.set_postfix(**kwargs)
+
+        def close(self):
+            self.pbar.close()
+
+    class AbstractLogger(ABC):
+        @abstractmethod
+        def add_scalar(self, tag: str, value: float, step: int):
+            pass
+
+        @abstractmethod
+        def close(self):
+            pass
+
+    class TensorBoardLogger(AbstractLogger):
+        def __init__(self):
+            self.writer = SummaryWriter()
+
+        def add_scalar(self, tag: str, value: float, step: int):
+            self.writer.add_scalar(tag, value, step)
+
+        def close(self):
+            self.writer.close()
+
     def __init__(
         self,
         model: nn.Module,
@@ -963,7 +1008,9 @@ class TrainingManager:
         test_data_loader: Optional[DataLoader],
         loss_fn: nn.Module,
         train_params: TrainingParams,
-        metrics_config: List[Dict[str, Any]]
+        metrics_config: List[Dict[str, Any]],
+        progress_bar_class: type = TqdmProgressBar,
+        logger_class: type = TensorBoardLogger
     ):
         self.model = model
         self.train_data_loader = train_data_loader
@@ -978,21 +1025,20 @@ class TrainingManager:
         self.scaler = GradScaler() if self.train_params.use_mixed_precision else None
         
         self.model_storage = ModelStorageManager(self.train_params.checkpoint_dir)
-        self.writer = SummaryWriter() if self.train_params.use_tensorboard else None
+        self.logger = logger_class() if self.train_params.use_tensorboard else None
         self.metrics_manager = MetricsManager(metrics_config, device=self.train_params.device)
+        self.progress_bar_class = progress_bar_class
 
         self.best_val_loss = float('inf')
         self.patience_counter = 0
 
-        self.to_device()
+        self._move_to_device()
 
-    def to_device(self) -> None:
-        """Move the model and loss function to the specified device."""
+    def _move_to_device(self) -> None:
         self.model.to(self.train_params.device)
         self.loss_fn.to(self.train_params.device)
 
     def load_model(self, path: str) -> None:
-        """Load a saved model and update training parameters."""
         try:
             loaded_info = self.model_storage.load_model(self.model, self.optimizer, path, self.train_params.device)
             self.train_params = TrainingParams(**loaded_info['train_params'])
@@ -1004,40 +1050,41 @@ class TrainingManager:
 
     @staticmethod
     def set_seed(seed: int) -> None:
-        """Set random seed for reproducibility."""
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    def _forward_pass(self, inputs: torch.Tensor) -> torch.Tensor:
-        """Perform a forward pass through the model."""
+    def _forward_pass(self, inputs: Tensor) -> Tensor:
         with autocast(enabled=self.train_params.use_mixed_precision):
             return self.model(inputs)
 
-    def _compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """Compute the loss."""
+    def _compute_loss(self, outputs: Tensor, targets: Tensor) -> Tensor:
         with autocast(enabled=self.train_params.use_mixed_precision):
             return self.loss_fn(outputs, targets)
 
-    def _backward_pass(self, loss: torch.Tensor) -> None:
-        """Perform a backward pass."""
+    def _backward_pass(self, loss: Tensor) -> None:
         if self.train_params.use_mixed_precision:
-            self.scaler.scale(loss).backward()
-            if self.train_params.clip_grad_norm:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            self._backward_pass_mixed_precision(loss)
         else:
-            loss.backward()
-            if self.train_params.clip_grad_norm:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
-            self.optimizer.step()
+            self._backward_pass_standard(loss)
 
-    def _prepare_batch(self, batch: Any) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Prepare a batch of data for training or validation."""
+    def _backward_pass_mixed_precision(self, loss: Tensor) -> None:
+        self.scaler.scale(loss).backward()
+        if self.train_params.clip_grad_norm:
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+
+    def _backward_pass_standard(self, loss: Tensor) -> None:
+        loss.backward()
+        if self.train_params.clip_grad_norm:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
+        self.optimizer.step()
+
+    def _prepare_batch(self, batch: Any) -> Tuple[Tensor, Tensor]:
         try:
             if isinstance(batch, (tuple, list)) and len(batch) == 2:
                 inputs, targets = batch
@@ -1053,7 +1100,6 @@ class TrainingManager:
             raise
 
     def _step(self, batch: Any, training: bool = True) -> Dict[str, float]:
-        """Perform a single step (train or validation)."""
         inputs, targets = self._prepare_batch(batch)
         
         if training:
@@ -1069,59 +1115,47 @@ class TrainingManager:
         return {'loss': loss.item()}
 
     def train_step(self, batch: Any) -> Dict[str, float]:
-        """Perform a single training step."""
         return self._step(batch, training=True)
 
     def val_step(self, batch: Any) -> Dict[str, float]:
-        """Perform a single validation step."""
         with torch.no_grad():
             return self._step(batch, training=False)
 
-    def train_epoch(self, epoch: int) -> Dict[str, float]:
-        """Train the model for one epoch."""
-        self.model.train()
+    def _run_epoch(self, data_loader: DataLoader, epoch: int, training: bool) -> Dict[str, float]:
+        self.model.train() if training else self.model.eval()
         self.metrics_manager.reset()
         total_loss = 0.0
-        num_batches = len(self.train_data_loader)
+        num_batches = len(data_loader)
         
-        with tqdm(total=num_batches, desc=f"Epoch {epoch+1}/{self.train_params.epochs}", dynamic_ncols=True) as pbar:
-            for i, batch in enumerate(self.train_data_loader):
-                step_results = self.train_step(batch)
-                total_loss += step_results['loss']
-                
-                if i % self.train_params.log_interval == 0:
-                    metrics = self.metrics_manager.compute()
-                    metrics['loss'] = step_results['loss']
-                    self._log_progress('train', epoch, i, metrics)
-                
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
+        phase = "train" if training else "val"
+        desc = f"{'Training' if training else 'Validation'} Epoch {epoch+1}/{self.train_params.epochs}"
+        pbar = self.progress_bar_class(total=num_batches, desc=desc)
+        
+        for i, batch in enumerate(data_loader):
+            step_results = self.train_step(batch) if training else self.val_step(batch)
+            total_loss += step_results['loss']
+            
+            if training and i % self.train_params.log_interval == 0:
+                metrics = self.metrics_manager.compute()
+                metrics['loss'] = step_results['loss']
+                self._log_progress(phase, epoch, i, metrics)
+            
+            pbar.update(1)
+            pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
+        
+        pbar.close()
         
         metrics = self.metrics_manager.compute()
         metrics['loss'] = total_loss / num_batches
         return metrics
+
+    def train_epoch(self, epoch: int) -> Dict[str, float]:
+        return self._run_epoch(self.train_data_loader, epoch, training=True)
 
     def validate(self, epoch: int) -> Dict[str, float]:
-        """Validate the model on the validation set."""
-        self.model.eval()
-        self.metrics_manager.reset()
-        total_loss = 0.0
-        num_batches = len(self.val_data_loader)
-        
-        with torch.no_grad(), tqdm(total=num_batches, desc=f"Validation Epoch {epoch+1}", dynamic_ncols=True) as pbar:
-            for batch in self.val_data_loader:
-                step_results = self.val_step(batch)
-                total_loss += step_results['loss']
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
-        
-        metrics = self.metrics_manager.compute()
-        metrics['loss'] = total_loss / num_batches
-        self._log_progress('val', epoch, 0, metrics)
-        return metrics
+        return self._run_epoch(self.val_data_loader, epoch, training=False)
 
     def train_loop(self) -> None:
-        """Main training loop."""
         for epoch in range(self.train_params.epochs):
             train_results = self.train_epoch(epoch)
             
@@ -1135,7 +1169,6 @@ class TrainingManager:
             self._save_checkpoint(epoch, train_results)
 
     def _update_scheduler(self, val_loss: float) -> None:
-        """Update the learning rate scheduler."""
         if self.scheduler:
             if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                 self.scheduler.step(val_loss)
@@ -1143,7 +1176,6 @@ class TrainingManager:
                 self.scheduler.step()
 
     def _check_early_stopping(self, val_loss: float, epoch: int) -> bool:
-        """Check if early stopping criteria are met."""
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
             self._save_best_model(epoch, val_loss)
@@ -1154,7 +1186,6 @@ class TrainingManager:
         return self.train_params.early_stopping and self.patience_counter >= self.train_params.patience
 
     def _save_checkpoint(self, epoch: int, metrics: Dict[str, float]) -> None:
-        """Save a checkpoint of the model."""
         self.model_storage.save_model(
             self.model, 
             self.optimizer, 
@@ -1164,7 +1195,6 @@ class TrainingManager:
         )
 
     def _save_best_model(self, epoch: int, val_loss: float) -> None:
-        """Save the best model based on validation loss."""
         self.model_storage.save_model(
             self.model, 
             self.optimizer, 
@@ -1175,36 +1205,18 @@ class TrainingManager:
         )
 
     def test_loop(self) -> Dict[str, float]:
-        """Evaluate the model on the test set."""
-        self.model.eval()
-        self.metrics_manager.reset()
-        total_loss = 0.0
-        num_batches = len(self.test_data_loader)
-        
-        with torch.no_grad(), tqdm(total=num_batches, desc="Testing", dynamic_ncols=True) as pbar:
-            for batch in self.test_data_loader:
-                step_results = self.val_step(batch)
-                total_loss += step_results['loss']
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
-        
-        metrics = self.metrics_manager.compute()
-        metrics['loss'] = total_loss / num_batches
-        logger.info(f"Test Results: {metrics}")
-        return metrics
+        return self._run_epoch(self.test_data_loader, epoch=0, training=False)
 
-    def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, torch.Tensor]]) -> None:
-        """Log training progress to console and TensorBoard."""
-        if self.writer:
+    def _log_progress(self, phase: str, epoch: int, step: int, metrics: Dict[str, Union[float, Tensor]]) -> None:
+        if self.logger:
             for metric_name, metric_value in metrics.items():
-                self.writer.add_scalar(f"{phase}/{metric_name}", metric_value, epoch * len(self.train_data_loader) + step)
+                self.logger.add_scalar(f"{phase}/{metric_name}", metric_value, epoch * len(self.train_data_loader) + step)
         
         log_str = f"{phase.capitalize()} Epoch {epoch+1}, Step {step}: "
         log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
         logger.info(log_str)
 
     def train(self) -> Dict[str, float]:
-        """Complete training process including initialization, training loop, and final evaluation."""
         logger.info("Starting training process...")
 
         try:
@@ -1227,8 +1239,8 @@ class TrainingManager:
             logger.warning("No test data loader provided. Skipping final evaluation.")
             test_results = {}
 
-        if self.writer:
-            self.writer.close()
+        if self.logger:
+            self.logger.close()
 
         return test_results
 
