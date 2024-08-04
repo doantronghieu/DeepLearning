@@ -857,7 +857,13 @@ class ModelStorageManager:
             raise self.ModelStorageError(f"Error loading TorchScript model from {path}: {str(e)}")
   
 class TrainingParams(BaseModel):
-    """Configuration parameters for model training."""
+    """
+    Configuration parameters for model training.
+    
+    This class encapsulates all necessary parameters for training a deep learning model,
+    including hardware settings, optimization parameters, training loop settings,
+    scheduler configuration, and logging options.
+    """
 
     # Device and hardware settings
     device: torch.device = Field(
@@ -868,7 +874,7 @@ class TrainingParams(BaseModel):
 
     # Optimization settings
     learning_rate: float = Field(1e-3, gt=0, description="Learning rate for optimization")
-    optimizer: Literal["adam", "sgd", "adamw"] = Field("adam", description="Optimizer to use")
+    optimizer: str = Field("adam", description="Optimizer to use")
     weight_decay: float = Field(0.0, ge=0, description="Weight decay for regularization")
     clip_grad_norm: Optional[float] = Field(None, gt=0, description="Clip gradient norm if specified")
 
@@ -880,9 +886,7 @@ class TrainingParams(BaseModel):
 
     # Learning rate scheduler settings
     use_scheduler: bool = Field(False, description="Whether to use a learning rate scheduler")
-    scheduler_type: Optional[Literal["reduce_on_plateau", "step", "cosine", "one_cycle"]] = Field(
-        None, description="Type of learning rate scheduler to use"
-    )
+    scheduler_type: Optional[str] = Field(None, description="Type of learning rate scheduler to use")
     scheduler_params: Dict[str, Any] = Field(default_factory=dict, description="Additional scheduler parameters")
 
     # Logging and checkpoint settings
@@ -897,40 +901,54 @@ class TrainingParams(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+    OPTIMIZER_MAP: Dict[str, torch.optim.Optimizer] = {
+        "adam": torch.optim.Adam,
+        "sgd": torch.optim.SGD,
+        "adamw": torch.optim.AdamW
+    }
+
+    SCHEDULER_MAP: Dict[str, torch.optim.lr_scheduler.LRScheduler] = {
+        'reduce_on_plateau': torch.optim.lr_scheduler.ReduceLROnPlateau,
+        'step': torch.optim.lr_scheduler.StepLR,
+        'cosine': torch.optim.lr_scheduler.CosineAnnealingLR,
+        'one_cycle': torch.optim.lr_scheduler.OneCycleLR
+    }
+
     @field_validator('scheduler_type')
-    def validate_scheduler_type(cls, v, values):
+    def validate_scheduler(cls, v, values):
         if values.get('use_scheduler') and v is None:
             raise ValueError("scheduler_type must be set when use_scheduler is True")
         if not values.get('use_scheduler') and v is not None:
             raise ValueError("scheduler_type should be None when use_scheduler is False")
         return v
 
-    def get_optimizer(self, model_parameters) -> torch.optim.Optimizer:
-        """Get the optimizer based on the specified parameters."""
-        optimizers = {
-            "adam": torch.optim.Adam,
-            "sgd": torch.optim.SGD,
-            "adamw": torch.optim.AdamW
-        }
-        optimizer_class = optimizers.get(self.optimizer)
-        if optimizer_class is None:
-            raise ValueError(f"Unsupported optimizer: {self.optimizer}")
-        return optimizer_class(model_parameters, lr=self.learning_rate, weight_decay=self.weight_decay)
+    @field_validator('optimizer')
+    def validate_optimizer(cls, v):
+        if v not in cls.OPTIMIZER_MAP:
+            raise ValueError(f"Unsupported optimizer: {v}. Supported optimizers are: {', '.join(cls.OPTIMIZER_MAP.keys())}")
+        return v
 
-    def get_scheduler(self, optimizer: torch.optim.Optimizer) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
-        """Get the learning rate scheduler based on the specified parameters."""
+    def get_optimizer(self, model_parameters) -> Optimizer:
+        """
+        Get the optimizer based on the specified parameters.
+        """
+        optimizer_class = self.OPTIMIZER_MAP[self.optimizer]
+        return optimizer_class(
+            model_parameters,
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay
+        )
+
+    def get_scheduler(self, optimizer: Optimizer) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
+        """
+        Get the learning rate scheduler based on the specified parameters.
+        """
         if not self.use_scheduler:
             return None
         
-        schedulers = {
-            'reduce_on_plateau': torch.optim.lr_scheduler.ReduceLROnPlateau,
-            'step': torch.optim.lr_scheduler.StepLR,
-            'cosine': torch.optim.lr_scheduler.CosineAnnealingLR,
-            'one_cycle': torch.optim.lr_scheduler.OneCycleLR
-        }
-        scheduler_class = schedulers.get(self.scheduler_type)
+        scheduler_class = self.SCHEDULER_MAP.get(self.scheduler_type)
         if scheduler_class is None:
-            raise ValueError(f"Unsupported scheduler type: {self.scheduler_type}")
+            raise ValueError(f"Unsupported scheduler type: {self.scheduler_type}. Supported types are: {', '.join(self.SCHEDULER_MAP.keys())}")
         
         return scheduler_class(optimizer, **self.scheduler_params)
 
