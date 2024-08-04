@@ -30,32 +30,42 @@ class BaseModel(nn.Module, ABC):
         self.input_shape: Optional[Tuple[int, ...]] = None
         self.output_shape: Optional[Tuple[int, ...]] = None
         self.task_type: Optional[str] = None
-        self._layer_shapes: Dict[Union[int, str], Tuple[int, ...]] = {}
+        self._layer_shapes: Dict[str, Tuple[int, ...]] = {}
         self._hooks: List[RemovableHandle] = []
         self._device: Optional[torch.device] = None
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Perform a forward pass through the model."""
+        """
+        Perform a forward pass through the model.
+        """
         raise NotImplementedError("Subclass must implement abstract method")
 
     @abstractmethod
-    def inference(self, x: torch.Tensor, **kwargs) -> Any:
-        """Perform inference on the input."""
+    def inference(self, x: torch.Tensor, **kwargs: Any) -> Any:
+        """
+        Perform inference on the input.
+        """
         raise NotImplementedError("Subclass must implement abstract method")
 
     @abstractmethod
-    def compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor, **kwargs) -> torch.Tensor:
-        """Compute the loss for the model."""
+    def compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+        """
+        Compute the loss for the model.
+        """
         raise NotImplementedError("Subclass must implement abstract method")
 
     @abstractmethod
-    def compute_prediction(self, outputs: torch.Tensor, **kwargs) -> Any:
-        """Compute predictions from the model outputs."""
+    def compute_prediction(self, outputs: torch.Tensor, **kwargs: Any) -> Any:
+        """
+        Compute predictions from the model outputs.
+        """
         raise NotImplementedError("Subclass must implement abstract method")
 
     def get_info(self) -> Dict[str, Any]:
-        """Get comprehensive information about the model."""
+        """
+        Get comprehensive information about the model.
+        """
         num_params = sum(p.numel() for p in self.parameters())
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         model_size_mb = sum(p.numel() * p.element_size() for p in self.parameters()) / (1024 * 1024)
@@ -78,43 +88,68 @@ class BaseModel(nn.Module, ABC):
         input_shape: Optional[Tuple[int, ...]],
         output_shape: Optional[Tuple[int, ...]]
     ) -> None:
-        """Set multiple model attributes at once."""
+        """
+        Set multiple model attributes at once.
+        """
         self.model_type = model_type
         self.task_type = task_type
         self.input_shape = input_shape
         self.output_shape = output_shape
         if input_shape:
-            self._layer_shapes[0] = input_shape
+            self._layer_shapes["input"] = input_shape
         if output_shape:
-            self._layer_shapes[-1] = output_shape
+            self._layer_shapes["output"] = output_shape
             
     @property
     def device(self) -> torch.device:
-        """Get the device on which the model is currently loaded."""
+        """
+        Get the device on which the model is currently loaded.
+        """
         if self._device is None:
             self._device = next(self.parameters()).device
         return self._device
 
-    def freeze_layers(self, layer_names: List[str]) -> None:
-        """Freeze specified layers of the model."""
+    def _set_layer_trainable(self, layer_names: List[str], trainable: bool) -> None:
+        """
+        Set the trainable status of specified layers.
+
+        Args:
+            layer_names (List[str]): Names of the layers to modify.
+            trainable (bool): Whether to set the layers as trainable or not.
+        """
         for name, param in self.named_parameters():
             if any(layer_name in name for layer_name in layer_names):
-                param.requires_grad = False
-        logger.info(f"Frozen layers: {layer_names}")
+                param.requires_grad = trainable
+        logger.info(f"{'Unfrozen' if trainable else 'Frozen'} layers: {layer_names}")
+
+    def freeze_layers(self, layer_names: List[str]) -> None:
+        """
+        Freeze specified layers of the model.
+
+        Args:
+            layer_names (List[str]): Names of the layers to freeze.
+        """
+        self._set_layer_trainable(layer_names, False)
 
     def unfreeze_layers(self, layer_names: List[str]) -> None:
-        """Unfreeze specified layers of the model."""
-        for name, param in self.named_parameters():
-            if any(layer_name in name for layer_name in layer_names):
-                param.requires_grad = True
-        logger.info(f"Unfrozen layers: {layer_names}")
+        """
+        Unfreeze specified layers of the model.
+
+        Args:
+            layer_names (List[str]): Names of the layers to unfreeze.
+        """
+        self._set_layer_trainable(layer_names, True)
     
     def get_trainable_params(self) -> Dict[str, nn.Parameter]:
-        """Get all trainable parameters of the model."""
+        """
+        Get all trainable parameters of the model.
+        """
         return {name: param for name, param in self.named_parameters() if param.requires_grad}
     
     def load_pretrained_weights(self, weights_path: str, strict: bool = True) -> None:
-        """Load pretrained weights into the model."""
+        """
+        Load pretrained weights into the model.
+        """
         try:
             state_dict = torch.load(weights_path, map_location=self.device)
             self.load_state_dict(state_dict, strict=strict)
@@ -127,7 +162,9 @@ class BaseModel(nn.Module, ABC):
             raise
 
     def get_layer_output(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
-        """Get the output of a specific layer given an input tensor."""
+        """
+        Get the output of a specific layer given an input tensor.
+        """
         output = {}
 
         def hook(module: nn.Module, input: Any, out: torch.Tensor) -> None:
@@ -143,38 +180,64 @@ class BaseModel(nn.Module, ABC):
         return output['value']
 
     def get_layer(self, layer_name: str) -> nn.Module:
-        """Get a specific layer of the model by name."""
+        """
+        Get a specific layer of the model by name.
+        """
         for name, module in self.named_modules():
             if name == layer_name:
                 return module
         raise ValueError(f"Layer {layer_name} not found in the model")
 
-    def get_shape(self, layer: Union[int, str], dummy_input: Optional[torch.Tensor] = None) -> Tuple[int, ...]:
-        """Get the shape of a specific layer."""
+    def get_shape(self, layer: Union[str, int], dummy_input: Optional[torch.Tensor] = None) -> Tuple[int, ...]:
+        """
+        Get the shape of a specific layer.
+
+        Args:
+            layer (Union[str, int]): Layer identifier (name or index).
+            dummy_input (Optional[torch.Tensor]): Dummy input for shape computation.
+
+        Returns:
+            Tuple[int, ...]: Shape of the specified layer.
+
+        Raises:
+            ValueError: If the shape for the specified layer is not found or computed.
+        """
         if dummy_input is not None:
             self.compute_shapes(dummy_input.shape)
 
-        if isinstance(layer, int):
-            if layer == 0:
-                return self.input_shape if self.input_shape is not None else tuple()
-            elif layer == -1:
-                return self.output_shape if self.output_shape is not None else tuple()
-            elif layer in self._layer_shapes:
-                return self._layer_shapes[layer]
-        elif isinstance(layer, str):
-            for name, module in self.named_modules():
-                if name == layer and hasattr(module, 'weight'):
-                    return tuple(module.weight.shape)
+        if isinstance(layer, str):
+            return self._get_shape_by_name(layer)
+        elif isinstance(layer, int):
+            return self._get_shape_by_index(layer)
 
-        raise ValueError(f"Shape for layer {layer} not found or not computed yet.")
+    def _get_shape_by_name(self, layer_name: str) -> Tuple[int, ...]:
+        """Helper method to get shape by layer name."""
+        if layer_name in self._layer_shapes:
+            return self._layer_shapes[layer_name]
+        for name, module in self.named_modules():
+            if name == layer_name and hasattr(module, 'weight'):
+                return tuple(module.weight.shape)
+        raise ValueError(f"Shape for layer {layer_name} not found or not computed.")
+
+    def _get_shape_by_index(self, layer_index: int) -> Tuple[int, ...]:
+        """Helper method to get shape by layer index."""
+        if layer_index == 0:
+            return self.input_shape or tuple()
+        elif layer_index == -1:
+            return self.output_shape or tuple()
+        elif str(layer_index) in self._layer_shapes:
+            return self._layer_shapes[str(layer_index)]
+        raise ValueError(f"Shape for layer index {layer_index} not found or not computed.")
 
     def compute_shapes(self, input_shape: Tuple[int, ...]) -> None:
-        """Compute and store the shapes of all layers in the model."""
+        """
+        Compute and store the shapes of all layers in the model.
+        """
         def hook(module: nn.Module, input: Any, output: torch.Tensor) -> None:
-            self._layer_shapes[len(self._layer_shapes)] = tuple(output.shape[1:])
+            self._layer_shapes[str(len(self._layer_shapes))] = tuple(output.shape[1:])
 
         self._layer_shapes.clear()
-        self._layer_shapes[0] = input_shape
+        self._layer_shapes["input"] = input_shape
 
         for module in self.modules():
             if not isinstance(module, nn.Sequential):
@@ -188,10 +251,12 @@ class BaseModel(nn.Module, ABC):
         self._hooks.clear()
 
         self.input_shape = input_shape
-        self.output_shape = self._layer_shapes[max(self._layer_shapes.keys())]
+        self.output_shape = self._layer_shapes[str(max(int(k) for k in self._layer_shapes if k.isdigit()))]
     
-    def summary(self, input_size: Optional[Tuple[int, ...]] = None, **kwargs) -> None:
-        """Print a summary of the model architecture with additional options."""
+    def summary(self, input_size: Optional[Tuple[int, ...]] = None, **kwargs: Any) -> None:
+        """
+        Print a summary of the model architecture with additional options.
+        """
         from torchinfo import summary as torch_summary
 
         if input_size is None and self.input_shape is None:
@@ -200,12 +265,16 @@ class BaseModel(nn.Module, ABC):
         input_size = input_size or self.input_shape
         torch_summary(self, input_size=input_size, **kwargs)
 
-    def apply_weight_initialization(self, init_func: Callable[[nn.Module], None]) -> None:
-        """Apply a weight initialization function to all the model's parameters."""
+    def apply_weight_initialization(self, init_func: callable) -> None:
+        """
+        Apply a weight initialization function to all the model's parameters.
+        """
         self.apply(init_func)
 
     def get_activation_maps(self, x: torch.Tensor, layer_name: str) -> torch.Tensor:
-        """Get activation maps for a specific layer."""
+        """
+        Get activation maps for a specific layer.
+        """
         activation = {}
 
         def get_activation(name: str) -> callable:
