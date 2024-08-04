@@ -887,13 +887,10 @@ class ModelStorageManager:
             raise
   
 class TrainingParams(BaseModel):
-    """
-    Pydantic model for all training parameters.
-    This class defines the structure and validation rules for training configuration.
-    """
+    """Configuration parameters for model training."""
 
     # Device and hardware settings
-    device: str = Field(
+    device: torch.device = Field(
         torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         description="Device to use for training"
     )
@@ -901,7 +898,8 @@ class TrainingParams(BaseModel):
 
     # Optimization settings
     learning_rate: float = Field(1e-3, gt=0, description="Learning rate for optimization")
-    optimizer: Literal["adam", "sgd"] = Field("adam", description="Optimizer to use")
+    optimizer: Literal["adam", "sgd", "adamw"] = Field("adam", description="Optimizer to use")
+    weight_decay: float = Field(0.0, ge=0, description="Weight decay for regularization")
     clip_grad_norm: Optional[float] = Field(None, gt=0, description="Clip gradient norm if specified")
 
     # Training loop settings
@@ -912,9 +910,10 @@ class TrainingParams(BaseModel):
 
     # Learning rate scheduler settings
     use_scheduler: bool = Field(False, description="Whether to use a learning rate scheduler")
-    scheduler_type: Optional[Literal["reduce_on_plateau", "step", "cosine"]] = Field(
+    scheduler_type: Optional[Literal["reduce_on_plateau", "step", "cosine", "one_cycle"]] = Field(
         None, description="Type of learning rate scheduler to use"
     )
+    scheduler_params: Dict[str, Any] = Field(default_factory=dict, description="Additional scheduler parameters")
 
     # Logging and checkpoint settings
     use_tensorboard: bool = Field(False, description="Whether to use TensorBoard for logging")
@@ -929,8 +928,7 @@ class TrainingParams(BaseModel):
         arbitrary_types_allowed = True
 
     @field_validator('scheduler_type')
-    def validate_scheduler_type(cls, v, values: Dict):
-        """Validate that scheduler_type is set only when use_scheduler is True."""
+    def validate_scheduler_type(cls, v, values):
         if values.get('use_scheduler') and v is None:
             raise ValueError("scheduler_type must be set when use_scheduler is True")
         if not values.get('use_scheduler') and v is not None:
@@ -938,81 +936,73 @@ class TrainingParams(BaseModel):
         return v
 
     def get_optimizer(self, model_parameters) -> torch.optim.Optimizer:
-        """
-        Get the optimizer based on the specified parameters.
-
-        Args:
-            model_parameters: The parameters of the model to optimize.
-
-        Returns:
-            torch.optim.Optimizer: The initialized optimizer.
-        """
-        if self.optimizer == "adam":
-            return torch.optim.Adam(model_parameters, lr=self.learning_rate)
-        elif self.optimizer == "sgd":
-            return torch.optim.SGD(model_parameters, lr=self.learning_rate)
-        else:
+        """Get the optimizer based on the specified parameters."""
+        optimizers = {
+            "adam": torch.optim.Adam,
+            "sgd": torch.optim.SGD,
+            "adamw": torch.optim.AdamW
+        }
+        optimizer_class = optimizers.get(self.optimizer)
+        if optimizer_class is None:
             raise ValueError(f"Unsupported optimizer: {self.optimizer}")
+        return optimizer_class(model_parameters, lr=self.learning_rate, weight_decay=self.weight_decay)
 
     def get_scheduler(self, optimizer: torch.optim.Optimizer) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
-        """
-        Get the learning rate scheduler based on the specified parameters.
-
-        Args:
-            optimizer: The optimizer to schedule.
-
-        Returns:
-            Optional[torch.optim.lr_scheduler._LRScheduler]: The initialized scheduler, if use_scheduler is True.
-        """
+        """Get the learning rate scheduler based on the specified parameters."""
         if not self.use_scheduler:
             return None
         
-        if self.scheduler_type == 'reduce_on_plateau':
-            return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
-        elif self.scheduler_type == 'step':
-            return torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-        elif self.scheduler_type == 'cosine':
-            return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
-        else:
+        schedulers = {
+            'reduce_on_plateau': torch.optim.lr_scheduler.ReduceLROnPlateau,
+            'step': torch.optim.lr_scheduler.StepLR,
+            'cosine': torch.optim.lr_scheduler.CosineAnnealingLR,
+            'one_cycle': torch.optim.lr_scheduler.OneCycleLR
+        }
+        scheduler_class = schedulers.get(self.scheduler_type)
+        if scheduler_class is None:
             raise ValueError(f"Unsupported scheduler type: {self.scheduler_type}")
+        
+        return scheduler_class(optimizer, **self.scheduler_params)
 
 class TrainingManager:
     """Manages the training process for deep learning models."""
 
     def __init__(
         self,
+        model: nn.Module,
         train_data_loader: DataLoader,
         val_data_loader: Optional[DataLoader],
         test_data_loader: Optional[DataLoader],
-        model: nn.Module,
         loss_fn: nn.Module,
         train_params: TrainingParams,
         metrics_config: List[Dict[str, Any]]
-    ) -> None:
+    ):
+        self.model = model
         self.train_data_loader = train_data_loader
         self.val_data_loader = val_data_loader
         self.test_data_loader = test_data_loader
-        self.model = model
         self.loss_fn = loss_fn
         self.train_params = train_params
-        self.model_storage = ModelStorageManager(self.train_params.checkpoint_dir)
-        
+        self.metrics_config = metrics_config
+
         self.optimizer = self.train_params.get_optimizer(self.model.parameters())
         self.scheduler = self.train_params.get_scheduler(self.optimizer)
         self.scaler = GradScaler() if self.train_params.use_mixed_precision else None
         
+        self.model_storage = ModelStorageManager(self.train_params.checkpoint_dir)
         self.writer = SummaryWriter() if self.train_params.use_tensorboard else None
-        
+        self.metrics_manager = MetricsManager(metrics_config, device=self.train_params.device)
+
         self.best_val_loss = float('inf')
         self.patience_counter = 0
-        
-        self.metrics_manager = MetricsManager(metrics_config, device=self.train_params.device)
+
+        self.to_device()
 
     def to_device(self) -> None:
         """Move the model and loss function to the specified device."""
         self.model.to(self.train_params.device)
         self.loss_fn.to(self.train_params.device)
-    
+
     def load_model(self, path: str) -> None:
         """Load a saved model and update training parameters."""
         try:
@@ -1023,7 +1013,7 @@ class TrainingManager:
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
             raise
-    
+
     @staticmethod
     def set_seed(seed: int) -> None:
         """Set random seed for reproducibility."""
@@ -1035,18 +1025,12 @@ class TrainingManager:
 
     def _forward_pass(self, inputs: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model."""
-        if self.train_params.use_mixed_precision:
-            with autocast():
-                return self.model(inputs)
-        else:
+        with autocast(enabled=self.train_params.use_mixed_precision):
             return self.model(inputs)
 
     def _compute_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """Compute the loss."""
-        if self.train_params.use_mixed_precision:
-            with autocast():
-                return self.loss_fn(outputs, targets)
-        else:
+        with autocast(enabled=self.train_params.use_mixed_precision):
             return self.loss_fn(outputs, targets)
 
     def _backward_pass(self, loss: torch.Tensor) -> None:
@@ -1064,29 +1048,6 @@ class TrainingManager:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.train_params.clip_grad_norm)
             self.optimizer.step()
 
-    def train_step(self, batch: Any) -> Dict[str, float]:
-        """Perform a single training step."""
-        inputs, targets = self._prepare_batch(batch)
-        self.optimizer.zero_grad()
-        
-        outputs = self._forward_pass(inputs)
-        loss = self._compute_loss(outputs, targets)
-        self._backward_pass(loss)
-
-        self.metrics_manager.update(outputs, targets)
-        return {'loss': loss.item()}
-
-    def val_step(self, batch: Any) -> Dict[str, float]:
-        """Perform a single validation step."""
-        inputs, targets = self._prepare_batch(batch)
-
-        with torch.no_grad():
-            outputs = self._forward_pass(inputs)
-            loss = self._compute_loss(outputs, targets)
-
-        self.metrics_manager.update(outputs, targets)
-        return {'loss': loss.item()}
-
     def _prepare_batch(self, batch: Any) -> Tuple[torch.Tensor, torch.Tensor]:
         """Prepare a batch of data for training or validation."""
         try:
@@ -1102,6 +1063,31 @@ class TrainingManager:
         except Exception as e:
             logger.error(f"Error preparing batch: {str(e)}")
             raise
+
+    def _step(self, batch: Any, training: bool = True) -> Dict[str, float]:
+        """Perform a single step (train or validation)."""
+        inputs, targets = self._prepare_batch(batch)
+        
+        if training:
+            self.optimizer.zero_grad()
+        
+        outputs = self._forward_pass(inputs)
+        loss = self._compute_loss(outputs, targets)
+        
+        if training:
+            self._backward_pass(loss)
+
+        self.metrics_manager.update(outputs, targets)
+        return {'loss': loss.item()}
+
+    def train_step(self, batch: Any) -> Dict[str, float]:
+        """Perform a single training step."""
+        return self._step(batch, training=True)
+
+    def val_step(self, batch: Any) -> Dict[str, float]:
+        """Perform a single validation step."""
+        with torch.no_grad():
+            return self._step(batch, training=False)
 
     def train_epoch(self, epoch: int) -> Dict[str, float]:
         """Train the model for one epoch."""
@@ -1207,10 +1193,12 @@ class TrainingManager:
         total_loss = 0.0
         num_batches = len(self.test_data_loader)
         
-        with torch.no_grad():
+        with torch.no_grad(), tqdm(total=num_batches, desc="Testing", dynamic_ncols=True) as pbar:
             for batch in self.test_data_loader:
                 step_results = self.val_step(batch)
                 total_loss += step_results['loss']
+                pbar.update(1)
+                pbar.set_postfix(loss=f"{step_results['loss']:.4f}")
         
         metrics = self.metrics_manager.compute()
         metrics['loss'] = total_loss / num_batches
@@ -1226,5 +1214,34 @@ class TrainingManager:
         log_str = f"{phase.capitalize()} Epoch {epoch+1}, Step {step}: "
         log_str += ", ".join([f"{name}: {value:.4f}" for name, value in metrics.items()])
         logger.info(log_str)
+
+    def train(self) -> Dict[str, float]:
+        """Complete training process including initialization, training loop, and final evaluation."""
+        logger.info("Starting training process...")
+
+        try:
+            self.train_loop()
+        except KeyboardInterrupt:
+            logger.info("Training interrupted by user.")
+        except Exception as e:
+            logger.error(f"An error occurred during training: {str(e)}")
+            raise
+
+        logger.info("Training completed. Loading best model for final evaluation...")
+        best_model_path = self.model_storage.get_best_model()
+        if best_model_path:
+            self.load_model(best_model_path)
+        
+        if self.test_data_loader:
+            logger.info("Starting final evaluation on test set...")
+            test_results = self.test_loop()
+        else:
+            logger.warning("No test data loader provided. Skipping final evaluation.")
+            test_results = {}
+
+        if self.writer:
+            self.writer.close()
+
+        return test_results
 
 ...
