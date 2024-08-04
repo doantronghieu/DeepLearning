@@ -7,6 +7,8 @@ import numpy as np
 from pydantic import BaseModel, Field, field_validator
 from tensorboardX import SummaryWriter
 import torch
+from torch import Tensor
+from torch.optim import Optimizer
 import torch.nn as nn
 import torchmetrics
 from torchmetrics import Metric
@@ -449,46 +451,67 @@ class MetricsManager:
     def __init__(self, metrics_config: List[Dict[str, Any]], device: Union[str, torch.device] = 'cpu'):
         """
         Initialize the MetricsManager.
-
-        Args:
-            metrics_config (List[Dict[str, Any]]): Configuration for metrics to be tracked.
-            device (Union[str, torch.device]): Device to compute metrics on.
         """
         self.metrics: Dict[str, Union[Metric, Callable]] = {}
         self.device = torch.device(device)
         self._initialize_metrics(metrics_config)
 
+    class MetricInitializationError(Exception):
+      def __init__(self, *args: object) -> None:
+          super().__init__(*args)
+      """Custom exception for metric initialization errors."""
+      pass
+    
     def _initialize_metrics(self, metrics_config: List[Dict[str, Any]]) -> None:
         """
         Initialize metrics based on the provided configuration.
 
         Args:
             metrics_config (List[Dict[str, Any]]): Configuration for metrics to be initialized.
+
+        Raises:
+            MetricInitializationError: If there's an error initializing a metric.
         """
         for metric_info in metrics_config:
-            metric_name = metric_info['name']
-            metric_type = metric_info.get('type', 'torchmetrics')
-            
-            try:
-                if metric_type == 'torchmetrics':
-                    metric_class = getattr(torchmetrics, metric_info['class'])
-                    metric_params = metric_info.get('params', {})
-                    self.metrics[metric_name] = metric_class(**metric_params).to(self.device)
-                elif metric_type == 'custom':
-                    self.metrics[metric_name] = metric_info['function']
-                else:
-                    raise ValueError(f"Unsupported metric type: {metric_type}")
-            except Exception as e:
-                logger.error(f"Failed to initialize metric {metric_name}: {str(e)}")
-                raise
+            self._initialize_single_metric(metric_info)
 
-    def update(self, outputs: torch.Tensor, targets: torch.Tensor) -> None:
+    def _initialize_single_metric(self, metric_info: Dict[str, Any]) -> None:
+        """
+        Initialize a single metric based on its configuration.
+        """
+        metric_name = metric_info['name']
+        metric_type = metric_info.get('type', 'torchmetrics')
+
+        try:
+            if metric_type == 'torchmetrics':
+                self._initialize_torchmetric(metric_name, metric_info)
+            elif metric_type == 'custom':
+                self._initialize_custom_metric(metric_name, metric_info)
+            else:
+                raise ValueError(f"Unsupported metric type: {metric_type}")
+        except Exception as e:
+            raise self.MetricInitializationError(f"Failed to initialize metric {metric_name}: {str(e)}")
+
+    def _initialize_torchmetric(self, metric_name: str, metric_info: Dict[str, Any]) -> None:
+        """Initialize a torchmetrics metric."""
+        metric_class = getattr(torchmetrics, metric_info['class'])
+        metric_params = metric_info.get('params', {})
+        self.metrics[metric_name] = metric_class(**metric_params).to(self.device)
+
+    def _initialize_custom_metric(self, metric_name: str, metric_info: Dict[str, Any]) -> None:
+        """Initialize a custom metric function."""
+        self.metrics[metric_name] = metric_info['function']
+
+    def update(self, outputs: Tensor, targets: Tensor) -> None:
         """
         Update all metrics with new predictions and targets.
 
         Args:
             outputs (Tensor): Model outputs/predictions.
             targets (Tensor): Ground truth targets.
+
+        Raises:
+            RuntimeError: If there's an error updating a metric.
         """
         for name, metric in self.metrics.items():
             try:
@@ -498,15 +521,11 @@ class MetricsManager:
                     # For custom metrics, we compute them on-the-fly
                     _ = metric(outputs, targets)
             except Exception as e:
-                logger.error(f"Error updating metric {name}: {str(e)}")
-                raise
+                raise RuntimeError(f"Error updating metric {name}: {str(e)}")
 
-    def compute(self) -> Dict[str, torch.Tensor]:
+    def compute(self) -> Dict[str, Tensor]:
         """
         Compute and return all metrics.
-
-        Returns:
-            Dict[str, Tensor]: Dictionary of computed metrics.
         """
         results = {}
         for name, metric in self.metrics.items():
@@ -517,8 +536,7 @@ class MetricsManager:
                     # For custom metrics, we assume they've been computed in the update step
                     results[name] = torch.tensor(0.0)  # Placeholder
             except Exception as e:
-                logger.error(f"Error computing metric {name}: {str(e)}")
-                raise
+                raise RuntimeError(f"Error computing metric {name}: {str(e)}")
         return results
 
     def reset(self) -> None:
@@ -530,15 +548,6 @@ class MetricsManager:
     def get_metric(self, name: str) -> Union[Metric, Callable]:
         """
         Get a specific metric by name.
-
-        Args:
-            name (str): Name of the metric to retrieve.
-
-        Returns:
-            Union[Metric, Callable]: The requested metric object or function.
-
-        Raises:
-            KeyError: If the metric is not found.
         """
         if name not in self.metrics:
             raise KeyError(f"Metric '{name}' not found.")
@@ -565,12 +574,6 @@ class MetricsManager:
     def remove_metric(self, name: str) -> None:
         """
         Remove a metric from the manager.
-
-        Args:
-            name (str): Name of the metric to remove.
-
-        Raises:
-            KeyError: If the metric is not found.
         """
         if name not in self.metrics:
             raise KeyError(f"Metric '{name}' not found.")
@@ -579,12 +582,6 @@ class MetricsManager:
     def to(self, device: Union[str, torch.device]) -> 'MetricsManager':
         """
         Move all metrics to the specified device.
-
-        Args:
-            device (Union[str, torch.device]): The device to move metrics to.
-
-        Returns:
-            MetricsManager: Self reference for method chaining.
         """
         self.device = torch.device(device)
         for name, metric in self.metrics.items():
@@ -599,22 +596,26 @@ class MetricsManager:
         Returns:
             Dict[str, Any]: A dictionary containing metric summaries.
         """
-        summary = {}
-        for name, metric in self.metrics.items():
-            if isinstance(metric, Metric):
-                summary[name] = {
-                    'value': metric.compute().item(),
-                    'type': 'torchmetrics',
-                    'class': metric.__class__.__name__,
-                    'config': metric._defaults if hasattr(metric, '_defaults') else {}
-                }
-            else:
-                summary[name] = {
-                    'value': None,  # Cannot compute value for custom metrics here
-                    'type': 'custom',
-                    'function': str(metric)
-                }
-        return summary
+        return {
+            name: self._get_metric_summary(name, metric)
+            for name, metric in self.metrics.items()
+        }
+
+    def _get_metric_summary(self, name: str, metric: Union[Metric, Callable]) -> Dict[str, Any]:
+        """Get summary for a single metric."""
+        if isinstance(metric, Metric):
+            return {
+                'value': metric.compute().item(),
+                'type': 'torchmetrics',
+                'class': metric.__class__.__name__,
+                'config': getattr(metric, '_defaults', {})
+            }
+        else:
+            return {
+                'value': None,  # Cannot compute value for custom metrics here
+                'type': 'custom',
+                'function': str(metric)
+            }
 
     def log_metrics(self, step: int) -> None:
         """
@@ -633,12 +634,20 @@ class MetricsManager:
 class ModelStorageManager:
     """Manages model storage, including saving, loading, and versioning models."""
 
-    def __init__(self, base_dir: str = "checkpoints"):
+    def __init__(self, base_dir: str = "checkpoints", file_extension: str = ".pth"):
         self.base_dir = base_dir
-        os.makedirs(self.base_dir, exist_ok=True)
+        self.file_extension = file_extension
         self.version_file = os.path.join(self.base_dir, "version_info.txt")
-        self.current_version = self._load_or_create_version_info()
+        self._current_version = self._load_or_create_version_info()
+        os.makedirs(self.base_dir, exist_ok=True)
 
+    class ModelStorageError(Exception):
+      def __init__(self, *args: object) -> None:
+          super().__init__(*args)
+          
+      """Custom exception for ModelStorageManager errors."""
+      pass
+    
     def _load_or_create_version_info(self) -> int:
         """Load version information from file or create if not exists."""
         try:
@@ -653,12 +662,12 @@ class ModelStorageManager:
     def _update_version_info(self) -> None:
         """Update the version information in the version file."""
         with open(self.version_file, 'w') as f:
-            f.write(str(self.current_version))
+            f.write(str(self._current_version))
 
     def save_model(
         self,
         model: nn.Module,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optimizer,
         train_params: Dict[str, Any],
         epoch: int,
         metrics: Dict[str, float],
@@ -679,31 +688,37 @@ class ModelStorageManager:
 
         Returns:
             Path to the saved model file.
+
+        Raises:
+            ModelStorageError: If there's an error saving the model.
         """
-        self.current_version += 1
-        filename = filename or f'model_v{self.current_version}_epoch_{epoch}.pth'
+        self._current_version += 1
+        filename = filename or f'model_v{self._current_version}_epoch_{epoch}{self.file_extension}'
         path = os.path.join(self.base_dir, filename)
 
-        torch.save({
-            'version': self.current_version,
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_params': train_params,
-            'metrics': metrics,
-            'tags': tags or []
-        }, path)
+        try:
+            torch.save({
+                'version': self._current_version,
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_params': train_params,
+                'metrics': metrics,
+                'tags': tags or []
+            }, path)
 
-        self._update_version_info()
-        logger.info(f"Model saved to {path}")
-        return path
+            self._update_version_info()
+            logger.info(f"Model saved to {path}")
+            return path
+        except Exception as e:
+            raise self.ModelStorageError(f"Error saving model to {path}: {str(e)}")
 
     def load_model(
         self,
         model: nn.Module,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optimizer,
         path: str,
-        device: str = 'cpu'
+        device: Union[str, torch.device] = 'cpu'
     ) -> Dict[str, Any]:
         """
         Load a saved model and return related information.
@@ -718,10 +733,10 @@ class ModelStorageManager:
             Dictionary containing loaded model information.
 
         Raises:
-            FileNotFoundError: If the model file is not found.
+            ModelStorageError: If there's an error loading the model.
         """
         if not os.path.exists(path):
-            raise FileNotFoundError(f"No model found at {path}")
+            raise self.ModelStorageError(f"No model found at {path}")
 
         try:
             checkpoint = torch.load(path, map_location=device)
@@ -737,8 +752,7 @@ class ModelStorageManager:
                 'tags': checkpoint.get('tags', [])
             }
         except Exception as e:
-            logger.error(f"Error loading model from {path}: {str(e)}")
-            raise
+            raise self.ModelStorageError(f"Error loading model from {path}: {str(e)}")
 
     def list_saved_models(self) -> List[Dict[str, Any]]:
         """
@@ -749,7 +763,7 @@ class ModelStorageManager:
         """
         models = []
         for f in os.listdir(self.base_dir):
-            if f.endswith('.pth'):
+            if f.endswith(self.file_extension):
                 path = os.path.join(self.base_dir, f)
                 try:
                     info = torch.load(path, map_location='cpu')
@@ -772,14 +786,17 @@ class ModelStorageManager:
             filename: Name of the file to delete.
 
         Raises:
-            FileNotFoundError: If the model file is not found.
+            ModelStorageError: If the model file is not found or cannot be deleted.
         """
         path = os.path.join(self.base_dir, filename)
         if os.path.exists(path):
-            os.remove(path)
-            logger.info(f"Deleted model: {path}")
+            try:
+                os.remove(path)
+                logger.info(f"Deleted model: {path}")
+            except Exception as e:
+                raise self.ModelStorageError(f"Error deleting model {path}: {str(e)}")
         else:
-            raise FileNotFoundError(f"No model found at {path}")
+            raise self.ModelStorageError(f"No model found at {path}")
 
     def get_best_model(self, metric: str = 'val_loss', mode: str = 'min') -> Optional[str]:
         """
@@ -804,58 +821,40 @@ class ModelStorageManager:
     def get_latest_model(self) -> Optional[str]:
         """
         Get the filename of the latest saved model based on version number.
-
-        Returns:
-            Filename of the latest model, or None if no models found.
         """
         models = self.list_saved_models()
         return max(models, key=lambda x: x['version'])['filename'] if models else None
 
-    def to_torchscript(self, model: nn.Module, input_shape: Tuple[int, ...], filename: Optional[str] = None) -> str:
+    def to_torchscript(self, model: nn.Module, input_shape: tuple, filename: Optional[str] = None) -> str:
         """
         Convert the model to TorchScript and save it.
-
-        Args:
-            model: The model to convert.
-            input_shape: The input shape for tracing the model.
-            filename: Custom filename for the saved TorchScript model.
-
-        Returns:
-            Path to the saved TorchScript model file.
         """
-        example_input = torch.randn(input_shape)
-        traced_model = torch.jit.trace(model, example_input)
+        try:
+            example_input = torch.randn(input_shape)
+            traced_model = torch.jit.trace(model, example_input)
 
-        filename = filename or f"{model.__class__.__name__}_torchscript.pt"
-        path = os.path.join(self.base_dir, filename)
-        torch.jit.save(traced_model, path)
+            filename = filename or f"{model.__class__.__name__}_torchscript.pt"
+            path = os.path.join(self.base_dir, filename)
+            torch.jit.save(traced_model, path)
 
-        logger.info(f"TorchScript model saved to {path}")
-        return path
+            logger.info(f"TorchScript model saved to {path}")
+            return path
+        except Exception as e:
+            raise self.ModelStorageError(f"Error converting model to TorchScript: {str(e)}")
 
     def load_torchscript(self, path: str) -> torch.jit.ScriptModule:
         """
         Load a TorchScript model.
-
-        Args:
-            path: Path to the TorchScript model file.
-
-        Returns:
-            Loaded TorchScript model.
-
-        Raises:
-            FileNotFoundError: If the TorchScript model file is not found.
         """
         if not os.path.exists(path):
-            raise FileNotFoundError(f"No TorchScript model found at {path}")
+            raise self.ModelStorageError(f"No TorchScript model found at {path}")
 
         try:
             model = torch.jit.load(path)
             logger.info(f"TorchScript model loaded from {path}")
             return model
         except Exception as e:
-            logger.error(f"Error loading TorchScript model from {path}: {str(e)}")
-            raise
+            raise self.ModelStorageError(f"Error loading TorchScript model from {path}: {str(e)}")
   
 class TrainingParams(BaseModel):
     """Configuration parameters for model training."""
