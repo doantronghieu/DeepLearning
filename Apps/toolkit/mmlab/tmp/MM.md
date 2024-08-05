@@ -56,35 +56,9 @@
 
 #### ✅ Parameter Scheduler
 
-#### ✅temp Hook
+#### ✅ Hook
 
-##### Built-in Hooks
-
-###### LoggerHook
-
-###### CheckpointHook
-
-###### ParamSchedulerHook
-
-###### IterTimerHook
-
-###### DistSamplerSeedHook
-
-###### RuntimeInfoHook
-
-###### EMAHook
-
-###### EmptyCacheHook
-
-###### SyncBuffersHook
-
-###### ProfilerHook
-
-##### Customize Your Hooks
-
-## Advanced tutorials
-
-### Registry
+### ✅temp Registry
 
 ### Config
 

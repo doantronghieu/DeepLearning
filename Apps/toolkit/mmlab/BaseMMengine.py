@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, Tuple, Type, List, Union
 from pydantic import BaseModel, Field, ValidationError
 from loguru import logger
 from torch.utils.data import DataLoader, Dataset
-from mmengine.model import BaseModel
+import mmengine
 from mmengine.runner import Runner, set_random_seed
 from mmengine.analysis import get_model_complexity_info
 from mmengine.evaluator import BaseMetric, Evaluator
@@ -16,6 +16,8 @@ from mmengine.optim import OptimWrapper, AmpOptimWrapper
 from mmengine.optim.scheduler import (
     MultiStepLR, LinearLR, ExponentialLR, CosineAnnealingLR, LinearParamScheduler
 )
+from mmengine.hooks import Hook
+from mmengine.registry import HOOKS
 
 class DebugOptions(BaseModel):
     dataset_length: Optional[int] = Field(None, description="Set a fixed dataset length for debugging")
@@ -65,7 +67,13 @@ class ParamSchedulerConfig(BaseModel):
     end: Optional[int] = Field(None, description="Ending point of the scheduler")
     convert_to_iter_based: bool = Field(False, description="Convert epoch-based config to iteration-based")
     param_name: Optional[str] = Field(None, description="Name of the parameter to schedule (for generic schedulers)")
-    
+
+
+class HookConfig(mmengine.model.BaseModel):
+    type: str = Field(..., description="Type of hook to use")
+    priority: str = Field("NORMAL", description="Priority of the hook")
+    kwargs: Dict[str, Any] = Field(default_factory=dict, description="Additional arguments for the hook")
+
 class BaseMMengineConfig(BaseModel):
     work_dir: str = Field(..., description="Working directory for saving checkpoints and logs")
     max_epochs: int = Field(..., description="Maximum number of epochs for training")
@@ -99,6 +107,19 @@ class BaseMMengineConfig(BaseModel):
     val_dataloader: DataLoaderConfig = Field(..., description="Validation dataloader configuration")
     
     param_schedulers: Optional[List[ParamSchedulerConfig]] = Field(None, description="Parameter scheduler configurations")
+    
+    default_hooks: Dict[str, HookConfig] = Field(
+        default_factory=lambda: {
+            "runtime_info": HookConfig(type="RuntimeInfoHook", priority="VERY_HIGH"),
+            "timer": HookConfig(type="IterTimerHook"),
+            "sampler_seed": HookConfig(type="DistSamplerSeedHook"),
+            "logger": HookConfig(type="LoggerHook", priority="BELOW_NORMAL"),
+            "param_scheduler": HookConfig(type="ParamSchedulerHook", priority="LOW"),
+            "checkpoint": HookConfig(type="CheckpointHook", priority="VERY_LOW"),
+        },
+        description="Default hooks configuration"
+    )
+    custom_hooks: List[HookConfig] = Field(default_factory=list, description="Custom hooks configuration")
 
     class Config:
         extra = "allow"  # Allows for additional fields not explicitly defined in the model
@@ -341,6 +362,20 @@ class BaseMMengine(ABC):
         
         return scheduler_map[scheduler_type]
     
+    def _configure_hooks(self, config: BaseMMengineConfig) -> Dict[str, List[Dict[str, Any]]]:
+        """Configure default and custom hooks."""
+        default_hooks = []
+        for hook_name, hook_config in config.default_hooks.items():
+            hook_cfg = {"type": hook_config.type, "priority": hook_config.priority, **hook_config.kwargs}
+            default_hooks.append(hook_cfg)
+
+        custom_hooks = []
+        for hook_config in config.custom_hooks:
+            hook_cfg = {"type": hook_config.type, "priority": hook_config.priority, **hook_config.kwargs}
+            custom_hooks.append(hook_cfg)
+
+        return {"default_hooks": default_hooks, "custom_hooks": custom_hooks}
+    
     def configure_runner(self, config: Dict[str, Any]) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
@@ -388,6 +423,8 @@ class BaseMMengine(ABC):
         if config.get('param_schedulers'):
             param_schedulers = [self.build_param_scheduler(sc) for sc in config['param_schedulers']]
         
+        hooks_config = self._configure_hooks(config)
+        
         runner_config = {
             'model': self.model,
             'work_dir': config['work_dir'],
@@ -405,6 +442,8 @@ class BaseMMengine(ABC):
             'model_wrapper_cfg': model_wrapper_cfg,
             'data_preprocessor': self.data_preprocessor,
             'param_scheduler': param_schedulers,
+            "default_hooks": hooks_config["default_hooks"],
+            "custom_hooks": hooks_config["custom_hooks"],
         }
         
         self.runner = Runner(**runner_config)
@@ -499,3 +538,4 @@ class BaseMMengine(ABC):
         self.setup(config)
         self.train()
         logger.info("Enhanced experiment completed")
+
