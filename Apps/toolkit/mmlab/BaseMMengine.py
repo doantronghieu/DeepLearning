@@ -12,6 +12,7 @@ from mmengine.dist import init_dist
 from mmengine.config import Config
 from mmengine.registry import RUNNERS, DATASETS, TRANSFORMS, FUNCTIONS, METRICS
 from mmengine.dataset import DefaultSampler, pseudo_collate, default_collate, BaseDataset
+from mmengine.optim import OptimWrapper, AmpOptimWrapper
 
 class DebugOptions(BaseModel):
     dataset_length: Optional[int] = Field(None, description="Set a fixed dataset length for debugging")
@@ -23,6 +24,8 @@ class OptimizerConfig(BaseModel):
     type: str = Field(..., description="Type of optimizer to use")
     lr: float = Field(..., description="Learning rate")
     weight_decay: Optional[float] = Field(None, description="Weight decay factor")
+    paramwise_cfg: Optional[Dict[str, Any]] = Field(None, description="Parameter-wise learning rate configuration")
+    constructor: Optional[str] = Field(None, description="Custom optimizer wrapper constructor")
 
 class StrategyConfig(BaseModel):
     type: str = Field(..., description="Type of training strategy to use")
@@ -196,17 +199,22 @@ class BaseMMengine(ABC):
         """Helper method to configure the optimizer wrapper."""
         optimizer_cfg = self.create_optimizer(optimizer_type, **kwargs.get('optimizer_kwargs', {}))
         
+        wrapper_cfg = {
+            'optimizer': optimizer_cfg,
+            'accumulative_counts': kwargs.get('accumulative_counts', 1)
+        }
+        
+        if kwargs.get('clip_grad'):
+            wrapper_cfg['clip_grad'] = kwargs['clip_grad']
+        
         if strategy_type == 'deepspeed':
-            return {'type': 'DeepSpeedOptimWrapper', 'optimizer': optimizer_cfg}
+            return {'type': 'DeepSpeedOptimWrapper', **wrapper_cfg}
         elif strategy_type == 'colossalai':
             return {'optimizer': dict(type='HybridAdam', lr=1e-3)}
         else:
-            return {
-                'type': 'AmpOptimWrapper' if use_amp else 'OptimWrapper',
-                'optimizer': optimizer_cfg,
-                'accumulative_counts': kwargs.get('accumulative_counts', 1)
-            }
-    
+            wrapper_type = 'AmpOptimWrapper' if use_amp else 'OptimWrapper'
+            return {'type': wrapper_type, **wrapper_cfg}
+
     def create_optimizer(self, optimizer_type: str, **kwargs) -> Dict[str, Any]:
         """
         Factory method to create an optimizer configuration based on the specified type.
@@ -237,6 +245,10 @@ class BaseMMengine(ABC):
         
         optimizer_config = optimizers[optimizer_type].copy()
         optimizer_config.update(kwargs)
+        
+        # Add support for parameter-wise learning rates
+        if 'paramwise_cfg' in kwargs:
+            optimizer_config['paramwise_cfg'] = kwargs['paramwise_cfg']
         
         return optimizer_config
 
@@ -304,6 +316,10 @@ class BaseMMengine(ABC):
         optimizer_wrapper_cfg = self._configure_optimizer(
             config['optimizer_type'], config['use_amp'], config['strategy_type'], **config
         )
+
+        # Add support for custom optimizer wrapper constructor
+        if config.get('optimizer_kwargs', {}).get('constructor'):
+            optimizer_wrapper_cfg['constructor'] = config['optimizer_kwargs']['constructor']
 
         strategy = self.create_strategy(config['strategy_type'], **config.get('strategy_kwargs', {}))
         visualizer = self.create_visualizer(config['vis_backends'], **config)

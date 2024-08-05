@@ -52,31 +52,9 @@
 
 #### ✅ Evaluation
 
-#### ✅temp OptimWrapper
+#### ✅ OptimWrapper
 
-##### OptimWrapper vs Optimizer
-
-###### Model training
-
-###### Get learning rate/momentum
-
-###### Export/load state dicts
-
-###### Use multiple optimizers
-
-###### Configure the OptimWapper in Runner
-
-##### Advanced usages
-
-###### Set different hyperparamters for different types of parameters
-
-###### Set different hyperparamters for different model modules
-
-###### Customize optimizer construction policies
-
-###### Adjust hyperparameters during training
-
-#### Parameter Scheduler
+#### ✅temp Parameter Scheduler
 
 ##### Usage
 
