@@ -5,6 +5,7 @@ from loguru import logger
 from torch.utils.data import DataLoader
 from mmengine.model import BaseModel
 from mmengine.runner import Runner, set_random_seed
+from mmengine.analysis import get_model_complexity_info
 from mmengine.evaluator import BaseMetric
 from mmengine.dist import init_dist
 
@@ -142,14 +143,18 @@ class BaseMMengine(ABC):
         seed: Optional[int] = None,
         diff_rank_seed: bool = False,
         deterministic: bool = False,
+        debug_options: Dict[str, Any] = {},
         **kwargs: Any
     ) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
-
+        
         Args:
-            ... (previous arguments remain unchanged)
-            vis_backends (List[str]): List of visualization backends to use
+            debug_options (Dict[str, Any]): Additional debugging options
+                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
+                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
+                - find_unused_parameters (bool): Enable unused parameter detection
+                - detect_anomalous_params (bool): Enable detection of anomalous parameters
             **kwargs: Additional keyword arguments for configuration
         """
         if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric]):
@@ -176,11 +181,29 @@ class BaseMMengine(ABC):
             deterministic=deterministic
         )
 
+        # Apply debugging options
+        if debug_options.get('dataset_length'):
+            self.train_dataloader.dataset.indices = debug_options['dataset_length']
+            self.val_dataloader.dataset.indices = debug_options['dataset_length']
+
+        train_dataloader_cfg = dict(self.train_dataloader.cfg)
+        val_dataloader_cfg = dict(self.val_dataloader.cfg)
+
+        if debug_options.get('num_batch_per_epoch'):
+            train_dataloader_cfg['num_batch_per_epoch'] = debug_options['num_batch_per_epoch']
+            val_dataloader_cfg['num_batch_per_epoch'] = debug_options['num_batch_per_epoch']
+
+        model_wrapper_cfg = dict(
+            type='MMDistributedDataParallel',
+            find_unused_parameters=debug_options.get('find_unused_parameters', False),
+            detect_anomalous_params=debug_options.get('detect_anomalous_params', False)
+        )
+
         runner_config = dict(
             model=self.model,
             work_dir=work_dir,
-            train_dataloader=self.train_dataloader,
-            val_dataloader=self.val_dataloader,
+            train_dataloader=train_dataloader_cfg,
+            val_dataloader=val_dataloader_cfg,
             train_cfg=dict(by_epoch=True, max_epochs=max_epochs, val_interval=val_interval),
             val_cfg=dict(),
             val_evaluator=dict(type=type(self.metric)),
@@ -189,7 +212,8 @@ class BaseMMengine(ABC):
             resume=resume,
             strategy=strategy,
             visualizer=visualizer,
-            randomness=randomness  # Add randomness configuration
+            randomness=randomness,
+            model_wrapper_cfg=model_wrapper_cfg
         )
 
         self.runner = Runner(**runner_config)
@@ -210,7 +234,34 @@ class BaseMMengine(ABC):
         except Exception as e:
             logger.error(f"An error occurred during training: {str(e)}")
             raise
+    
+    def calculate_model_complexity(self, input_shape: Tuple[int, ...]) -> Dict[str, Any]:
+        """
+        Calculate the FLOPs and parameters of the model.
 
+        Args:
+            input_shape (Tuple[int, ...]): The input shape for the model.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the analysis results.
+        """
+        if not self.model:
+            raise ValueError("Model must be set before calculating complexity.")
+
+        logger.info(f"Calculating model complexity for input shape: {input_shape}")
+        try:
+            analysis_results = get_model_complexity_info(self.model, input_shape)
+            
+            logger.info("Model complexity calculation completed")
+            logger.info(f"Model FLOPs: {analysis_results['flops_str']}")
+            logger.info(f"Model Parameters: {analysis_results['params_str']}")
+            
+            return analysis_results
+        except Exception as e:
+            logger.error(f"An error occurred during model complexity calculation: {str(e)}")
+            raise
+
+    
     def setup(
         self, work_dir: str, max_epochs: int, val_interval: int, 
         resume: bool = False, load_from: Optional[str] = None,
@@ -219,7 +270,9 @@ class BaseMMengine(ABC):
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
         strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], **kwargs: Any
+        vis_backends: List[str] = [], debug_options: Dict[str, Any] = {},
+        calculate_complexity: bool = False, input_shape: Optional[Tuple[int, ...]] = None,
+        **kwargs: Any
     ) -> None:
         """
         Set up the entire pipeline with enhanced options for optimization and memory saving.
@@ -240,16 +293,31 @@ class BaseMMengine(ABC):
             strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
             vis_backends (List[str]): List of visualization backends to use
             **strategy_kwargs: Additional keyword arguments for strategy configuration
+            debug_options (Dict[str, Any]): Additional debugging options
+                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
+                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
+                - find_unused_parameters (bool): Enable unused parameter detection
+                - detect_anomalous_params (bool): Enable detection of anomalous parameters
+            calculate_complexity (bool): Whether to calculate model complexity
+            input_shape (Optional[Tuple[int, ...]]): Input shape for model complexity calculation
+            **kwargs: Additional keyword arguments for configuration
         """
         logger.info(f"Setting up MMEngine pipeline with strategy: {strategy_type}, optimizer: {optimizer_type}, and visualization backends: {vis_backends}")
         try:
             self.model = self.build_model()
             self.train_dataloader, self.val_dataloader = self.build_dataset()
             self.metric = self.build_metric()
+
+            if calculate_complexity:
+                if not input_shape:
+                    raise ValueError("input_shape must be provided when calculate_complexity is True")
+                complexity_results = self.calculate_model_complexity(input_shape)
+                logger.info(f"Model complexity results:\n{complexity_results['out_table']}")
+
             self.configure_runner(
                 work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
                 use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-                strategy_type, optimizer_type, vis_backends, **kwargs
+                strategy_type, optimizer_type, vis_backends, debug_options=debug_options, **kwargs
             )
             logger.info("Enhanced pipeline setup completed successfully")
         except Exception as e:
@@ -264,7 +332,9 @@ class BaseMMengine(ABC):
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
         strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], **kwargs: Any
+        vis_backends: List[str] = [], debug_options: Dict[str, Any] = {},
+        calculate_complexity: bool = False, input_shape: Optional[Tuple[int, ...]] = None,
+        **kwargs: Any
     ) -> None:
         """
         Run a complete experiment with enhanced options for optimization and memory saving.
@@ -285,12 +355,21 @@ class BaseMMengine(ABC):
             strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
             vis_backends (List[str]): List of visualization backends to use
             **strategy_kwargs: Additional keyword arguments for strategy configuration
+            debug_options (Dict[str, Any]): Additional debugging options
+                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
+                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
+                - find_unused_parameters (bool): Enable unused parameter detection
+                - detect_anomalous_params (bool): Enable detection of anomalous parameters
+            calculate_complexity (bool): Whether to calculate model complexity
+            input_shape (Optional[Tuple[int, ...]]): Input shape for model complexity calculation
+            **kwargs: Additional keyword arguments for configuration
         """
         logger.info(f"Starting experiment with strategy: {strategy_type} and visualization backends: {vis_backends}")
         self.setup(
             work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
             use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-            strategy_type, optimizer_type, vis_backends, **kwargs
+            strategy_type, optimizer_type, vis_backends, debug_options=debug_options,
+            calculate_complexity=calculate_complexity, input_shape=input_shape, **kwargs
         )
         self.train()
         logger.info("Enhanced experiment completed")

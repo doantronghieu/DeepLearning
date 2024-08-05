@@ -36,15 +36,15 @@
 
 #### ✅ Debug Tricks
 
-#### Calculate the FLOPs and Parameters of Model
+#### ✅ Calculate the FLOPs and Parameters of Model
 
-#### Setting the Frequency of Logging, Checkpoint Saving, and Validation
+#### ✅ Setting the Frequency of Logging, Checkpoint Saving, and Validation
 
 #### EpochBasedTraining to IterBasedTraining
 
 ### Tutorials
 
-#### Runner
+#### ✅ Runner
 
 ##### Example codes of the runner
 
