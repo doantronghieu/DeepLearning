@@ -13,6 +13,9 @@ from mmengine.config import Config
 from mmengine.registry import RUNNERS, DATASETS, TRANSFORMS, FUNCTIONS, METRICS
 from mmengine.dataset import DefaultSampler, pseudo_collate, default_collate, BaseDataset
 from mmengine.optim import OptimWrapper, AmpOptimWrapper
+from mmengine.optim.scheduler import (
+    MultiStepLR, LinearLR, ExponentialLR, CosineAnnealingLR, LinearParamScheduler
+)
 
 class DebugOptions(BaseModel):
     dataset_length: Optional[int] = Field(None, description="Set a fixed dataset length for debugging")
@@ -55,6 +58,14 @@ class EvaluatorConfig(BaseModel):
     type: str = Field(..., description="Type of evaluator to use")
     metrics: List[Dict[str, Any]] = Field(..., description="List of metrics to evaluate")
 
+class ParamSchedulerConfig(BaseModel):
+    type: str = Field(..., description="Type of parameter scheduler")
+    by_epoch: bool = Field(True, description="Whether to update by epoch or iteration")
+    begin: int = Field(0, description="Starting point of the scheduler")
+    end: Optional[int] = Field(None, description="Ending point of the scheduler")
+    convert_to_iter_based: bool = Field(False, description="Convert epoch-based config to iteration-based")
+    param_name: Optional[str] = Field(None, description="Name of the parameter to schedule (for generic schedulers)")
+    
 class BaseMMengineConfig(BaseModel):
     work_dir: str = Field(..., description="Working directory for saving checkpoints and logs")
     max_epochs: int = Field(..., description="Maximum number of epochs for training")
@@ -86,6 +97,8 @@ class BaseMMengineConfig(BaseModel):
     val_dataset: DatasetConfig = Field(..., description="Validation dataset configuration")
     train_dataloader: DataLoaderConfig = Field(..., description="Training dataloader configuration")
     val_dataloader: DataLoaderConfig = Field(..., description="Validation dataloader configuration")
+    
+    param_schedulers: Optional[List[ParamSchedulerConfig]] = Field(None, description="Parameter scheduler configurations")
 
     class Config:
         extra = "allow"  # Allows for additional fields not explicitly defined in the model
@@ -303,6 +316,31 @@ class BaseMMengine(ABC):
         
         return Evaluator(metrics)
     
+    def build_param_scheduler(self, scheduler_config: ParamSchedulerConfig) -> Any:
+        """Build parameter scheduler based on the provided configuration."""
+        scheduler_cls = self._get_scheduler_class(scheduler_config.type)
+        scheduler_kwargs = scheduler_config.dict(exclude={'type', 'param_name'})
+        
+        if scheduler_config.param_name:
+            scheduler_kwargs['param_name'] = scheduler_config.param_name
+        
+        return scheduler_cls(**scheduler_kwargs)
+
+    def _get_scheduler_class(self, scheduler_type: str) -> Type:
+        """Get the scheduler class based on the scheduler type."""
+        scheduler_map = {
+            'MultiStepLR': MultiStepLR,
+            'LinearLR': LinearLR,
+            'ExponentialLR': ExponentialLR,
+            'CosineAnnealingLR': CosineAnnealingLR,
+            'LinearParamScheduler': LinearParamScheduler,
+        }
+        
+        if scheduler_type not in scheduler_map:
+            raise ValueError(f"Unsupported scheduler type: {scheduler_type}")
+        
+        return scheduler_map[scheduler_type]
+    
     def configure_runner(self, config: Dict[str, Any]) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
@@ -346,6 +384,10 @@ class BaseMMengine(ABC):
 
         evaluator = self.build_evaluator(config['evaluator'])
 
+        param_schedulers = None
+        if config.get('param_schedulers'):
+            param_schedulers = [self.build_param_scheduler(sc) for sc in config['param_schedulers']]
+        
         runner_config = {
             'model': self.model,
             'work_dir': config['work_dir'],
@@ -361,7 +403,8 @@ class BaseMMengine(ABC):
             'visualizer': visualizer,
             'randomness': randomness,
             'model_wrapper_cfg': model_wrapper_cfg,
-            'data_preprocessor': self.data_preprocessor
+            'data_preprocessor': self.data_preprocessor,
+            'param_scheduler': param_schedulers,
         }
         
         self.runner = Runner(**runner_config)
@@ -430,7 +473,12 @@ class BaseMMengine(ABC):
                 complexity_results = self.calculate_model_complexity(config.input_shape)
                 logger.info(f"Model complexity results:\n{complexity_results['out_table']}")
 
-            self.configure_runner(config)
+            if config.param_schedulers:
+                logger.info(f"Configuring {len(config.param_schedulers)} parameter scheduler(s)")
+                for scheduler_config in config.param_schedulers:
+                    logger.info(f"  - {scheduler_config.type} for {scheduler_config.param_name or 'learning rate'}")
+
+            self.configure_runner(config.dict())
             logger.info("Enhanced pipeline setup completed successfully")
         except ValidationError as e:
             logger.error(f"Configuration validation error: {e}")

@@ -54,21 +54,9 @@
 
 #### ✅ OptimWrapper
 
-#### ✅temp Parameter Scheduler
+#### ✅ Parameter Scheduler
 
-##### Usage
-
-###### Use a single LRScheduler
-
-###### Combine multiple LRSchedulers (e.g. learning rate warm-up)
-
-##### How to adjust other hyperparameters
-
-###### Momentum
-
-###### Generic parameter scheduler
-
-#### Hook
+#### ✅temp Hook
 
 ##### Built-in Hooks
 
