@@ -1,6 +1,7 @@
 import torch
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Tuple, Type, List
+from pydantic import BaseModel, Field, ValidationError
 from loguru import logger
 from torch.utils.data import DataLoader
 from mmengine.model import BaseModel
@@ -8,6 +9,59 @@ from mmengine.runner import Runner, set_random_seed
 from mmengine.analysis import get_model_complexity_info
 from mmengine.evaluator import BaseMetric
 from mmengine.dist import init_dist
+from mmengine.config import Config
+from mmengine.registry import RUNNERS
+
+class DebugOptions(BaseModel):
+    dataset_length: Optional[int] = Field(None, description="Set a fixed dataset length for debugging")
+    num_batch_per_epoch: Optional[int] = Field(None, description="Set a fixed number of batches per epoch")
+    find_unused_parameters: bool = Field(False, description="Enable unused parameter detection")
+    detect_anomalous_params: bool = Field(False, description="Enable detection of anomalous parameters")
+
+class OptimizerConfig(BaseModel):
+    type: str = Field(..., description="Type of optimizer to use")
+    lr: float = Field(..., description="Learning rate")
+    weight_decay: Optional[float] = Field(None, description="Weight decay factor")
+
+class StrategyConfig(BaseModel):
+    type: str = Field(..., description="Type of training strategy to use")
+    fp16: Optional[Dict[str, Any]] = Field(None, description="FP16 configuration for DeepSpeed")
+    zero_optimization: Optional[Dict[str, Any]] = Field(None, description="ZeRO optimization configuration for DeepSpeed")
+    model_wrapper: Optional[Dict[str, Any]] = Field(None, description="Model wrapper configuration for FSDP")
+
+class VisualizerConfig(BaseModel):
+    wandb_init: Optional[Dict[str, Any]] = Field(None, description="Weights & Biases initialization parameters")
+    neptune_init: Optional[Dict[str, Any]] = Field(None, description="Neptune initialization parameters")
+
+class BaseMMengineConfig(BaseModel):
+    work_dir: str = Field(..., description="Working directory for saving checkpoints and logs")
+    max_epochs: int = Field(..., description="Maximum number of epochs for training")
+    val_interval: int = Field(..., description="Validation interval")
+    resume: bool = Field(False, description="Whether to resume training from a checkpoint")
+    load_from: Optional[str] = Field(None, description="Path to load model checkpoint")
+    distributed: bool = Field(False, description="Whether to use distributed training")
+    launcher: Optional[str] = Field(None, description="Launcher for distributed training")
+    use_amp: bool = Field(False, description="Whether to use automatic mixed precision training")
+    accumulative_counts: int = Field(1, description="Number of gradient accumulation steps")
+    use_grad_checkpoint: bool = Field(False, description="Whether to use gradient checkpointing")
+    compile_model: bool = Field(False, description="Whether to use torch.compile (PyTorch 2.0+)")
+    efficient_conv_bn_eval: bool = Field(False, description="Whether to use the experimental Efficient Conv BN Eval feature")
+    strategy_type: str = Field("default", description="Type of training strategy to use")
+    optimizer_type: str = Field("SGD", description="Type of optimizer to use")
+    vis_backends: List[str] = Field([], description="List of visualization backends to use")
+    seed: Optional[int] = Field(None, description="Random seed for reproducibility")
+    diff_rank_seed: bool = Field(False, description="Whether to use different seeds for different ranks")
+    deterministic: bool = Field(False, description="Whether to set deterministic mode for reproducibility")
+    calculate_complexity: bool = Field(False, description="Whether to calculate model complexity")
+    input_shape: Optional[Tuple[int, ...]] = Field(None, description="Input shape for model complexity calculation")
+    
+    debug_options: DebugOptions = Field(default_factory=DebugOptions, description="Debugging options")
+    optimizer_kwargs: OptimizerConfig = Field(..., description="Optimizer configuration")
+    strategy_kwargs: StrategyConfig = Field(..., description="Strategy configuration")
+    visualizer_kwargs: VisualizerConfig = Field(default_factory=VisualizerConfig, description="Visualizer configuration")
+
+    class Config:
+        extra = "allow"  # Allows for additional fields not explicitly defined in the model
 
 class BaseMMengine(ABC):
     def __init__(self) -> None:
@@ -45,24 +99,41 @@ class BaseMMengine(ABC):
         Returns:
             Dict[str, Any]: The strategy configuration
         """
-        if strategy_type == 'default':
-            return {}
-        elif strategy_type == 'deepspeed':
-            return {
+        strategies = {
+            'default': lambda: {},
+            'deepspeed': lambda: {
                 'type': 'DeepSpeedStrategy',
                 'fp16': kwargs.get('fp16', {'enabled': True}),
                 'zero_optimization': kwargs.get('zero_optimization', {'stage': 3})
-            }
-        elif strategy_type == 'fsdp':
-            return {
+            },
+            'fsdp': lambda: {
                 'type': 'FSDPStrategy',
                 'model_wrapper': kwargs.get('model_wrapper', {})
-            }
-        elif strategy_type == 'colossalai':
-            return {'type': 'ColossalAIStrategy'}
-        else:
+            },
+            'colossalai': lambda: {'type': 'ColossalAIStrategy'}
+        }
+        
+        strategy_func = strategies.get(strategy_type)
+        if not strategy_func:
             raise ValueError(f"Unsupported strategy type: {strategy_type}")
+        
+        return strategy_func()
 
+    def _configure_optimizer(self, optimizer_type: str, use_amp: bool, strategy_type: str, **kwargs) -> Dict[str, Any]:
+        """Helper method to configure the optimizer wrapper."""
+        optimizer_cfg = self.create_optimizer(optimizer_type, **kwargs.get('optimizer_kwargs', {}))
+        
+        if strategy_type == 'deepspeed':
+            return {'type': 'DeepSpeedOptimWrapper', 'optimizer': optimizer_cfg}
+        elif strategy_type == 'colossalai':
+            return {'optimizer': dict(type='HybridAdam', lr=1e-3)}
+        else:
+            return {
+                'type': 'AmpOptimWrapper' if use_amp else 'OptimWrapper',
+                'optimizer': optimizer_cfg,
+                'accumulative_counts': kwargs.get('accumulative_counts', 1)
+            }
+    
     def create_optimizer(self, optimizer_type: str, **kwargs) -> Dict[str, Any]:
         """
         Factory method to create an optimizer configuration based on the specified type.
@@ -74,13 +145,10 @@ class BaseMMengine(ABC):
         Returns:
             Dict[str, Any]: The optimizer configuration
         """
-        base_optimizers = {
+        optimizers = {
             'SGD': dict(type='SGD', lr=0.01, momentum=0.9),
             'Adam': dict(type='Adam', lr=0.001, betas=(0.9, 0.999)),
             'AdamW': dict(type='AdamW', lr=0.001, betas=(0.9, 0.999), weight_decay=0.01),
-        }
-        
-        advanced_optimizers = {
             'DAdaptAdaGrad': dict(type='DAdaptAdaGrad', lr=0.01),
             'DAdaptAdam': dict(type='DAdaptAdam', lr=0.01),
             'DAdaptSGD': dict(type='DAdaptSGD', lr=0.01),
@@ -91,16 +159,22 @@ class BaseMMengine(ABC):
             'Adafactor': dict(type='Adafactor', lr=1e-5, weight_decay=1e-2, scale_parameter=False, relative_step=False),
         }
         
-        all_optimizers = {**base_optimizers, **advanced_optimizers}
-        
-        if optimizer_type not in all_optimizers:
+        if optimizer_type not in optimizers:
             raise ValueError(f"Unsupported optimizer type: {optimizer_type}")
         
-        optimizer_config = all_optimizers[optimizer_type].copy()
+        optimizer_config = optimizers[optimizer_type].copy()
         optimizer_config.update(kwargs)
         
         return optimizer_config
 
+    def _configure_model_wrapper(self, debug_options: Dict[str, Any]) -> Dict[str, Any]:
+        """Helper method to configure the model wrapper."""
+        return {
+            'type': 'MMDistributedDataParallel',
+            'find_unused_parameters': debug_options.get('find_unused_parameters', False),
+            'detect_anomalous_params': debug_options.get('detect_anomalous_params', False)
+        }
+    
     def create_visualizer(self, vis_backends: List[str], **kwargs) -> Dict[str, Any]:
         """
         Factory method to create a visualizer configuration based on the specified backends.
@@ -113,118 +187,87 @@ class BaseMMengine(ABC):
             Dict[str, Any]: The visualizer configuration
         """
         vis_backends_config = []
+        backend_configs = {
+            'TensorBoard': lambda: dict(type='TensorboardVisBackend'),
+            'WandB': lambda: dict(type='WandbVisBackend', init_kwargs=kwargs.get('wandb_init', {})),
+            'ClearML': lambda: dict(type='ClearMLVisBackend'),
+            'Neptune': lambda: dict(type='NeptuneVisBackend', init_kwargs=kwargs.get('neptune_init', {})),
+            'DVCLive': lambda: dict(type='DVCLiveVisBackend'),
+            'Aim': lambda: dict(type='AimVisBackend')
+        }
+
         for backend in vis_backends:
-            if backend == 'TensorBoard':
-                vis_backends_config.append(dict(type='TensorboardVisBackend'))
-            elif backend == 'WandB':
-                vis_backends_config.append(dict(type='WandbVisBackend', init_kwargs=kwargs.get('wandb_init', {})))
-            elif backend == 'ClearML':
-                vis_backends_config.append(dict(type='ClearMLVisBackend'))
-            elif backend == 'Neptune':
-                vis_backends_config.append(dict(type='NeptuneVisBackend', init_kwargs=kwargs.get('neptune_init', {})))
-            elif backend == 'DVCLive':
-                vis_backends_config.append(dict(type='DVCLiveVisBackend'))
-            elif backend == 'Aim':
-                vis_backends_config.append(dict(type='AimVisBackend'))
+            if backend in backend_configs:
+                vis_backends_config.append(backend_configs[backend]())
             else:
                 logger.warning(f"Unsupported visualization backend: {backend}")
 
         return dict(type='Visualizer', vis_backends=vis_backends_config)
     
-    def configure_runner(
-        self, work_dir: str, max_epochs: int, val_interval: int, 
-        resume: bool = False, load_from: Optional[str] = None,
-        distributed: bool = False, launcher: Optional[str] = None,
-        use_amp: bool = False, accumulative_counts: int = 1,
-        use_grad_checkpoint: bool = False, compile_model: bool = False,
-        efficient_conv_bn_eval: bool = False,
-        strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], 
-        seed: Optional[int] = None,
-        diff_rank_seed: bool = False,
-        deterministic: bool = False,
-        debug_options: Dict[str, Any] = {},
-        **kwargs: Any
-    ) -> None:
+    def configure_runner(self, config: Dict[str, Any]) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
         
         Args:
-            debug_options (Dict[str, Any]): Additional debugging options
-                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
-                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
-                - find_unused_parameters (bool): Enable unused parameter detection
-                - detect_anomalous_params (bool): Enable detection of anomalous parameters
-            **kwargs: Additional keyword arguments for configuration
+            config (Dict[str, Any]): Configuration dictionary containing all necessary parameters
         """
         if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric]):
             raise ValueError("Model, dataloaders, and metric must be set before configuring the runner.")
 
-        optimizer_cfg = self.create_optimizer(optimizer_type, **kwargs.get('optimizer_kwargs', {}))
-        optimizer_wrapper_cfg = {
-            'type': 'AmpOptimWrapper' if use_amp else 'OptimWrapper',
-            'optimizer': optimizer_cfg,
-            'accumulative_counts': accumulative_counts
-        }
-
-        if strategy_type == 'deepspeed':
-            optimizer_wrapper_cfg = {'type': 'DeepSpeedOptimWrapper', 'optimizer': optimizer_cfg}
-        elif strategy_type == 'colossalai':
-            optimizer_wrapper_cfg = {'optimizer': dict(type='HybridAdam', lr=1e-3)}
-
-        strategy = self.create_strategy(strategy_type, **kwargs.get('strategy_kwargs', {}))
-        visualizer = self.create_visualizer(vis_backends, **kwargs)
-
-        randomness = dict(
-            seed=seed,
-            diff_rank_seed=diff_rank_seed,
-            deterministic=deterministic
+        optimizer_wrapper_cfg = self._configure_optimizer(
+            config['optimizer_type'], config['use_amp'], config['strategy_type'], **config
         )
 
-        # Apply debugging options
-        if debug_options.get('dataset_length'):
-            self.train_dataloader.dataset.indices = debug_options['dataset_length']
-            self.val_dataloader.dataset.indices = debug_options['dataset_length']
+        strategy = self.create_strategy(config['strategy_type'], **config.get('strategy_kwargs', {}))
+        visualizer = self.create_visualizer(config['vis_backends'], **config)
+
+        randomness = {
+            'seed': config.get('seed'),
+            'diff_rank_seed': config.get('diff_rank_seed', False),
+            'deterministic': config.get('deterministic', False)
+        }
+
+        # Apply debugging options to dataloaders
+        for dataloader in [self.train_dataloader, self.val_dataloader]:
+            if config['debug_options'].get('dataset_length'):
+                dataloader.dataset.indices = config['debug_options']['dataset_length']
 
         train_dataloader_cfg = dict(self.train_dataloader.cfg)
         val_dataloader_cfg = dict(self.val_dataloader.cfg)
 
-        if debug_options.get('num_batch_per_epoch'):
-            train_dataloader_cfg['num_batch_per_epoch'] = debug_options['num_batch_per_epoch']
-            val_dataloader_cfg['num_batch_per_epoch'] = debug_options['num_batch_per_epoch']
+        if config['debug_options'].get('num_batch_per_epoch'):
+            train_dataloader_cfg['num_batch_per_epoch'] = config['debug_options']['num_batch_per_epoch']
+            val_dataloader_cfg['num_batch_per_epoch'] = config['debug_options']['num_batch_per_epoch']
 
-        model_wrapper_cfg = dict(
-            type='MMDistributedDataParallel',
-            find_unused_parameters=debug_options.get('find_unused_parameters', False),
-            detect_anomalous_params=debug_options.get('detect_anomalous_params', False)
-        )
+        model_wrapper_cfg = self._configure_model_wrapper(config['debug_options'])
 
-        runner_config = dict(
-            model=self.model,
-            work_dir=work_dir,
-            train_dataloader=train_dataloader_cfg,
-            val_dataloader=val_dataloader_cfg,
-            train_cfg=dict(by_epoch=True, max_epochs=max_epochs, val_interval=val_interval),
-            val_cfg=dict(),
-            val_evaluator=dict(type=type(self.metric)),
-            optim_wrapper=optimizer_wrapper_cfg,
-            default_scope='mmengine',
-            resume=resume,
-            strategy=strategy,
-            visualizer=visualizer,
-            randomness=randomness,
-            model_wrapper_cfg=model_wrapper_cfg
-        )
+        runner_config = {
+            'model': self.model,
+            'work_dir': config['work_dir'],
+            'train_dataloader': train_dataloader_cfg,
+            'val_dataloader': val_dataloader_cfg,
+            'train_cfg': dict(by_epoch=True, max_epochs=config['max_epochs'], val_interval=config['val_interval']),
+            'val_cfg': dict(),
+            'val_evaluator': dict(type=type(self.metric)),
+            'optim_wrapper': optimizer_wrapper_cfg,
+            'default_scope': 'mmengine',
+            'resume': config.get('resume', False),
+            'strategy': strategy,
+            'visualizer': visualizer,
+            'randomness': randomness,
+            'model_wrapper_cfg': model_wrapper_cfg
+        }
 
         self.runner = Runner(**runner_config)
         
-        if seed is not None:
-            logger.info(f"Setting random seed to {seed}, "
-                        f"deterministic: {deterministic}, "
-                        f"diff_rank_seed: {diff_rank_seed}")
-            set_random_seed(seed, deterministic=deterministic, diff_rank_seed=diff_rank_seed)
+        if config.get('seed') is not None:
+            logger.info(f"Setting random seed to {config['seed']}, "
+                        f"deterministic: {config['deterministic']}, "
+                        f"diff_rank_seed: {config['diff_rank_seed']}")
+            set_random_seed(config['seed'], deterministic=config['deterministic'], diff_rank_seed=config['diff_rank_seed'])
     
     def train(self) -> None:
+        """Start the training process."""
         if not self.runner:
             raise ValueError("Runner must be configured before starting training.")
         
@@ -260,116 +303,45 @@ class BaseMMengine(ABC):
         except Exception as e:
             logger.error(f"An error occurred during model complexity calculation: {str(e)}")
             raise
-
     
-    def setup(
-        self, work_dir: str, max_epochs: int, val_interval: int, 
-        resume: bool = False, load_from: Optional[str] = None,
-        distributed: bool = False, launcher: Optional[str] = None,
-        use_amp: bool = False, accumulative_counts: int = 1,
-        use_grad_checkpoint: bool = False, compile_model: bool = False,
-        efficient_conv_bn_eval: bool = False,
-        strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], debug_options: Dict[str, Any] = {},
-        calculate_complexity: bool = False, input_shape: Optional[Tuple[int, ...]] = None,
-        **kwargs: Any
-    ) -> None:
+    def setup(self, config: BaseMMengineConfig) -> None:
         """
         Set up the entire pipeline with enhanced options for optimization and memory saving.
 
         Args:
-            work_dir (str): Working directory for saving checkpoints and logs
-            max_epochs (int): Maximum number of epochs for training
-            val_interval (int): Validation interval
-            resume (bool): Whether to resume training from a checkpoint
-            load_from (Optional[str]): Path to load model checkpoint
-            distributed (bool): Whether to use distributed training
-            launcher (Optional[str]): Launcher for distributed training
-            use_amp (bool): Whether to use automatic mixed precision training
-            accumulative_counts (int): Number of gradient accumulation steps
-            use_grad_checkpoint (bool): Whether to use gradient checkpointing
-            compile_model (bool): Whether to use torch.compile (PyTorch 2.0+)
-            efficient_conv_bn_eval (bool): Whether to use the experimental Efficient Conv BN Eval feature
-            strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
-            vis_backends (List[str]): List of visualization backends to use
-            **strategy_kwargs: Additional keyword arguments for strategy configuration
-            debug_options (Dict[str, Any]): Additional debugging options
-                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
-                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
-                - find_unused_parameters (bool): Enable unused parameter detection
-                - detect_anomalous_params (bool): Enable detection of anomalous parameters
-            calculate_complexity (bool): Whether to calculate model complexity
-            input_shape (Optional[Tuple[int, ...]]): Input shape for model complexity calculation
-            **kwargs: Additional keyword arguments for configuration
+            config (BaseMMengineConfig): Configuration object containing all necessary parameters
         """
-        logger.info(f"Setting up MMEngine pipeline with strategy: {strategy_type}, optimizer: {optimizer_type}, and visualization backends: {vis_backends}")
+        logger.info(f"Setting up MMEngine pipeline with strategy: {config.strategy_type}, "
+                    f"optimizer: {config.optimizer_type}, and visualization backends: {config.vis_backends}")
         try:
             self.model = self.build_model()
             self.train_dataloader, self.val_dataloader = self.build_dataset()
             self.metric = self.build_metric()
 
-            if calculate_complexity:
-                if not input_shape:
+            if config.calculate_complexity:
+                if not config.input_shape:
                     raise ValueError("input_shape must be provided when calculate_complexity is True")
-                complexity_results = self.calculate_model_complexity(input_shape)
+                complexity_results = self.calculate_model_complexity(config.input_shape)
                 logger.info(f"Model complexity results:\n{complexity_results['out_table']}")
 
-            self.configure_runner(
-                work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
-                use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-                strategy_type, optimizer_type, vis_backends, debug_options=debug_options, **kwargs
-            )
+            self.configure_runner(config)
             logger.info("Enhanced pipeline setup completed successfully")
+        except ValidationError as e:
+            logger.error(f"Configuration validation error: {e}")
+            raise
         except Exception as e:
             logger.error(f"An error occurred during setup: {str(e)}")
             raise
 
-    def run_experiment(
-        self, work_dir: str, max_epochs: int, val_interval: int, 
-        resume: bool = False, load_from: Optional[str] = None,
-        distributed: bool = False, launcher: Optional[str] = None,
-        use_amp: bool = False, accumulative_counts: int = 1,
-        use_grad_checkpoint: bool = False, compile_model: bool = False,
-        efficient_conv_bn_eval: bool = False,
-        strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], debug_options: Dict[str, Any] = {},
-        calculate_complexity: bool = False, input_shape: Optional[Tuple[int, ...]] = None,
-        **kwargs: Any
-    ) -> None:
+    def run_experiment(self, config: BaseMMengineConfig) -> None:
         """
         Run a complete experiment with enhanced options for optimization and memory saving.
 
         Args:
-            work_dir (str): Working directory for saving checkpoints and logs
-            max_epochs (int): Maximum number of epochs for training
-            val_interval (int): Validation interval
-            resume (bool): Whether to resume training from a checkpoint
-            load_from (Optional[str]): Path to load model checkpoint
-            distributed (bool): Whether to use distributed training
-            launcher (Optional[str]): Launcher for distributed training
-            use_amp (bool): Whether to use automatic mixed precision training
-            accumulative_counts (int): Number of gradient accumulation steps
-            use_grad_checkpoint (bool): Whether to use gradient checkpointing
-            compile_model (bool): Whether to use torch.compile (PyTorch 2.0+)
-            efficient_conv_bn_eval (bool): Whether to use the experimental Efficient Conv BN Eval feature
-            strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
-            vis_backends (List[str]): List of visualization backends to use
-            **strategy_kwargs: Additional keyword arguments for strategy configuration
-            debug_options (Dict[str, Any]): Additional debugging options
-                - dataset_length (Optional[int]): Set a fixed dataset length for debugging
-                - num_batch_per_epoch (Optional[int]): Set a fixed number of batches per epoch
-                - find_unused_parameters (bool): Enable unused parameter detection
-                - detect_anomalous_params (bool): Enable detection of anomalous parameters
-            calculate_complexity (bool): Whether to calculate model complexity
-            input_shape (Optional[Tuple[int, ...]]): Input shape for model complexity calculation
-            **kwargs: Additional keyword arguments for configuration
+            config (BaseMMengineConfig): Configuration object containing all necessary parameters
         """
-        logger.info(f"Starting experiment with strategy: {strategy_type} and visualization backends: {vis_backends}")
-        self.setup(
-            work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
-            use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-            strategy_type, optimizer_type, vis_backends, debug_options=debug_options,
-            calculate_complexity=calculate_complexity, input_shape=input_shape, **kwargs
-        )
+        logger.info(f"Starting experiment with strategy: {config.strategy_type} "
+                    f"and visualization backends: {config.vis_backends}")
+        self.setup(config)
         self.train()
         logger.info("Enhanced experiment completed")

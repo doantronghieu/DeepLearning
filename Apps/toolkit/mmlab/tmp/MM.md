@@ -46,21 +46,7 @@
 
 #### ✅ Runner
 
-##### Example codes of the runner
-
-###### A beginner-friendly example
-
-###### Explanations on example codes
-
-##### Best practice of the Runner - config files
-
-##### Basic dataflow
-
-##### Why use the runner? (Optional reading)
-
-##### Suggestions on next steps
-
-#### Dataset and DataLoader
+#### ✅temp Dataset and DataLoader
 
 ##### Details on dataloader
 
