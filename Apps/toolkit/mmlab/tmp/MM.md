@@ -50,19 +50,9 @@
 
 #### ✅ Model
 
-#### ✅temp Evaluation
+#### ✅ Evaluation
 
-##### Evaluation in model training or testing
-
-###### Using a single evaluation metric
-
-###### Using multiple evaluation metrics
-
-###### Customizing evaluation metrics
-
-##### Using offline results for evaluation
-
-#### OptimWrapper
+#### ✅temp OptimWrapper
 
 ##### OptimWrapper vs Optimizer
 

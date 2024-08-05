@@ -7,10 +7,10 @@ from torch.utils.data import DataLoader, Dataset
 from mmengine.model import BaseModel
 from mmengine.runner import Runner, set_random_seed
 from mmengine.analysis import get_model_complexity_info
-from mmengine.evaluator import BaseMetric
+from mmengine.evaluator import BaseMetric, Evaluator
 from mmengine.dist import init_dist
 from mmengine.config import Config
-from mmengine.registry import RUNNERS, DATASETS, TRANSFORMS, FUNCTIONS
+from mmengine.registry import RUNNERS, DATASETS, TRANSFORMS, FUNCTIONS, METRICS
 from mmengine.dataset import DefaultSampler, pseudo_collate, default_collate, BaseDataset
 
 class DebugOptions(BaseModel):
@@ -47,6 +47,10 @@ class DataLoaderConfig(BaseModel):
     shuffle: bool = Field(True, description="Whether to shuffle the data")
     sampler: Optional[Dict[str, Any]] = Field(None, description="Sampler configuration")
     collate_fn: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Collate function configuration")
+
+class EvaluatorConfig(BaseModel):
+    type: str = Field(..., description="Type of evaluator to use")
+    metrics: List[Dict[str, Any]] = Field(..., description="List of metrics to evaluate")
 
 class BaseMMengineConfig(BaseModel):
     work_dir: str = Field(..., description="Working directory for saving checkpoints and logs")
@@ -156,11 +160,7 @@ class BaseMMengine(ABC):
                 return pseudo_collate
         
         return FUNCTIONS.build(collate_config)
-    
-    @abstractmethod
-    def build_metric(self) -> BaseMetric:
-        pass
-    
+
     def create_strategy(self, strategy_type: str, **kwargs) -> Dict[str, Any]:
         """
         Factory method to create a strategy configuration based on the specified type.
@@ -277,6 +277,20 @@ class BaseMMengine(ABC):
 
         return dict(type='Visualizer', vis_backends=vis_backends_config)
     
+    @abstractmethod
+    def build_metric(self) -> List[BaseMetric]:
+        pass
+    
+    def build_evaluator(self, config: EvaluatorConfig) -> Evaluator:
+        """Build evaluator based on the provided configuration."""
+        metrics = []
+        for metric_config in config.metrics:
+            metric_type = metric_config.pop('type')
+            metric_class = METRICS.get(metric_type)
+            metrics.append(metric_class(**metric_config))
+        
+        return Evaluator(metrics)
+    
     def configure_runner(self, config: Dict[str, Any]) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
@@ -284,8 +298,8 @@ class BaseMMengine(ABC):
         Args:
             config (Dict[str, Any]): Configuration dictionary containing all necessary parameters
         """
-        if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric, self.data_preprocessor]):
-            raise ValueError("Model, dataloaders, metric, and data preprocessor must be set before configuring the runner.")
+        if not all([self.model, self.train_dataloader, self.val_dataloader, self.data_preprocessor]):
+            raise ValueError("Model, dataloaders, and data preprocessor must be set before configuring the runner.")
 
         optimizer_wrapper_cfg = self._configure_optimizer(
             config['optimizer_type'], config['use_amp'], config['strategy_type'], **config
@@ -314,6 +328,8 @@ class BaseMMengine(ABC):
 
         model_wrapper_cfg = self._configure_model_wrapper(config['debug_options'])
 
+        evaluator = self.build_evaluator(config['evaluator'])
+
         runner_config = {
             'model': self.model,
             'work_dir': config['work_dir'],
@@ -321,7 +337,7 @@ class BaseMMengine(ABC):
             'val_dataloader': val_dataloader_cfg,
             'train_cfg': dict(by_epoch=True, max_epochs=config['max_epochs'], val_interval=config['val_interval']),
             'val_cfg': dict(),
-            'val_evaluator': dict(type=type(self.metric)),
+            'val_evaluator': evaluator,
             'optim_wrapper': optimizer_wrapper_cfg,
             'default_scope': 'mmengine',
             'resume': config.get('resume', False),
@@ -391,8 +407,6 @@ class BaseMMengine(ABC):
             
             self.train_dataloader = self.build_dataloader(train_dataset, config.train_dataloader)
             self.val_dataloader = self.build_dataloader(val_dataset, config.val_dataloader)
-            
-            self.metric = self.build_metric()
 
             if config.calculate_complexity:
                 if not config.input_shape:
