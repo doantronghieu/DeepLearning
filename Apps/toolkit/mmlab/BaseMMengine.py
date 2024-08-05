@@ -1,16 +1,17 @@
 import torch
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Tuple, Type, List
+from typing import Dict, Any, Optional, Tuple, Type, List, Union
 from pydantic import BaseModel, Field, ValidationError
 from loguru import logger
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from mmengine.model import BaseModel
 from mmengine.runner import Runner, set_random_seed
 from mmengine.analysis import get_model_complexity_info
 from mmengine.evaluator import BaseMetric
 from mmengine.dist import init_dist
 from mmengine.config import Config
-from mmengine.registry import RUNNERS
+from mmengine.registry import RUNNERS, DATASETS, TRANSFORMS, FUNCTIONS
+from mmengine.dataset import DefaultSampler, pseudo_collate, default_collate, BaseDataset
 
 class DebugOptions(BaseModel):
     dataset_length: Optional[int] = Field(None, description="Set a fixed dataset length for debugging")
@@ -32,6 +33,20 @@ class StrategyConfig(BaseModel):
 class VisualizerConfig(BaseModel):
     wandb_init: Optional[Dict[str, Any]] = Field(None, description="Weights & Biases initialization parameters")
     neptune_init: Optional[Dict[str, Any]] = Field(None, description="Neptune initialization parameters")
+
+class DatasetConfig(BaseModel):
+    type: str = Field(..., description="Type of dataset to use")
+    data_root: str = Field(..., description="Root directory of the dataset")
+    ann_file: Optional[str] = Field(None, description="Path to annotation file")
+    data_prefix: Optional[Dict[str, str]] = Field(None, description="Prefix for data files")
+    pipeline: Optional[List[Dict[str, Any]]] = Field(None, description="Data processing pipeline")
+
+class DataLoaderConfig(BaseModel):
+    batch_size: int = Field(..., description="Batch size for dataloader")
+    num_workers: int = Field(2, description="Number of worker processes for data loading")
+    shuffle: bool = Field(True, description="Whether to shuffle the data")
+    sampler: Optional[Dict[str, Any]] = Field(None, description="Sampler configuration")
+    collate_fn: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Collate function configuration")
 
 class BaseMMengineConfig(BaseModel):
     work_dir: str = Field(..., description="Working directory for saving checkpoints and logs")
@@ -59,6 +74,11 @@ class BaseMMengineConfig(BaseModel):
     optimizer_kwargs: OptimizerConfig = Field(..., description="Optimizer configuration")
     strategy_kwargs: StrategyConfig = Field(..., description="Strategy configuration")
     visualizer_kwargs: VisualizerConfig = Field(default_factory=VisualizerConfig, description="Visualizer configuration")
+    
+    train_dataset: DatasetConfig = Field(..., description="Training dataset configuration")
+    val_dataset: DatasetConfig = Field(..., description="Validation dataset configuration")
+    train_dataloader: DataLoaderConfig = Field(..., description="Training dataloader configuration")
+    val_dataloader: DataLoaderConfig = Field(..., description="Validation dataloader configuration")
 
     class Config:
         extra = "allow"  # Allows for additional fields not explicitly defined in the model
@@ -80,9 +100,61 @@ class BaseMMengine(ABC):
     def build_model(self) -> BaseModel:
         pass
     
-    @abstractmethod
-    def build_dataset(self) -> Tuple[DataLoader, DataLoader]:
-        pass
+    def build_dataset(self, dataset_config: DatasetConfig) -> Dataset:
+        """Build dataset based on the provided configuration."""
+        try:
+            dataset_class = DATASETS.get(dataset_config.type)
+            if issubclass(dataset_class, BaseDataset):
+                return dataset_class(
+                    data_root=dataset_config.data_root,
+                    ann_file=dataset_config.ann_file,
+                    data_prefix=dataset_config.data_prefix,
+                    pipeline=dataset_config.pipeline
+                )
+            else:
+                # Fallback for other dataset types (e.g., torchvision datasets)
+                return dataset_class(root=dataset_config.data_root, **dataset_config.dict(exclude={'type', 'data_root'}))
+        except Exception as e:
+            logger.error(f"Failed to build dataset: {str(e)}")
+            raise
+    
+    def build_dataloader(self, dataset: Dataset, dataloader_config: DataLoaderConfig) -> DataLoader:
+        """Build dataloader based on the provided configuration."""
+        try:
+            sampler = self._build_sampler(dataset, dataloader_config.sampler)
+            collate_fn = self._build_collate_fn(dataloader_config.collate_fn)
+            
+            return DataLoader(
+                dataset,
+                batch_size=dataloader_config.batch_size,
+                num_workers=dataloader_config.num_workers,
+                sampler=sampler,
+                collate_fn=collate_fn
+            )
+        except Exception as e:
+            logger.error(f"Failed to build dataloader: {str(e)}")
+            raise
+    
+    def _build_sampler(self, dataset: Dataset, sampler_config: Optional[Dict[str, Any]]) -> Optional[torch.utils.data.Sampler]:
+        """Build sampler based on the provided configuration."""
+        if sampler_config is None:
+            return DefaultSampler(dataset, shuffle=True)
+        
+        sampler_type = sampler_config.pop('type', 'DefaultSampler')
+        return RUNNERS.build(dict(type=sampler_type, dataset=dataset, **sampler_config))
+
+    def _build_collate_fn(self, collate_config: Optional[Union[str, Dict[str, Any]]]) -> callable:
+        """Build collate function based on the provided configuration."""
+        if collate_config is None:
+            return pseudo_collate
+        
+        if isinstance(collate_config, str):
+            if collate_config == 'default_collate':
+                return default_collate
+            elif collate_config == 'pseudo_collate':
+                return pseudo_collate
+        
+        return FUNCTIONS.build(collate_config)
     
     @abstractmethod
     def build_metric(self) -> BaseMetric:
@@ -305,17 +377,18 @@ class BaseMMengine(ABC):
             raise
     
     def setup(self, config: BaseMMengineConfig) -> None:
-        """
-        Set up the entire pipeline with enhanced options for optimization and memory saving.
-
-        Args:
-            config (BaseMMengineConfig): Configuration object containing all necessary parameters
-        """
+        """Set up the entire pipeline with enhanced options for optimization and memory saving."""
         logger.info(f"Setting up MMEngine pipeline with strategy: {config.strategy_type}, "
                     f"optimizer: {config.optimizer_type}, and visualization backends: {config.vis_backends}")
         try:
             self.model = self.build_model()
-            self.train_dataloader, self.val_dataloader = self.build_dataset()
+            
+            train_dataset = self.build_dataset(config.train_dataset)
+            val_dataset = self.build_dataset(config.val_dataset)
+            
+            self.train_dataloader = self.build_dataloader(train_dataset, config.train_dataloader)
+            self.val_dataloader = self.build_dataloader(val_dataset, config.val_dataloader)
+            
             self.metric = self.build_metric()
 
             if config.calculate_complexity:

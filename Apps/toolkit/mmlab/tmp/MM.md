@@ -46,25 +46,9 @@
 
 #### ✅ Runner
 
-#### ✅temp Dataset and DataLoader
+#### ✅ Dataset and DataLoader
 
-##### Details on dataloader
-
-###### sampler and shuffle
-
-###### DefaultSampler
-
-###### The obscure collate_fn
-
-##### Details on dataset
-
-###### Use torchvision datasets
-
-###### Customize your dataset
-
-###### Use MMEngine BaseDataset
-
-#### Model
+#### ✅temp Model
 
 ##### Runner and model
 
