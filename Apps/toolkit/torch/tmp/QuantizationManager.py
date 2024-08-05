@@ -289,6 +289,7 @@ class QuantizationMetrics:
             _, predicted = torch.max(output, 1)
             accuracy = (predicted == target_data).float().mean().item()
         return accuracy
+
 class FXQuantization:
     @staticmethod
     def prepare_fx(

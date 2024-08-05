@@ -12,6 +12,9 @@ fastai
 transformers
 tritonclient
 
+## MM
+mmengine
+
 # Data
 albumentations # Image
 plotly
