@@ -34,7 +34,7 @@
 
 #### ✅ Set Random Seed
 
-#### Debug Tricks
+#### ✅ Debug Tricks
 
 #### Calculate the FLOPs and Parameters of Model
 

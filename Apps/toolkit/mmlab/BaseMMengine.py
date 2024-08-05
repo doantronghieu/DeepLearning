@@ -4,9 +4,8 @@ from typing import Dict, Any, Optional, Tuple, Type, List
 from loguru import logger
 from torch.utils.data import DataLoader
 from mmengine.model import BaseModel
-from mmengine.runner import Runner
+from mmengine.runner import Runner, set_random_seed
 from mmengine.evaluator import BaseMetric
-import os
 from mmengine.dist import init_dist
 
 class BaseMMengine(ABC):
@@ -139,7 +138,11 @@ class BaseMMengine(ABC):
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
         strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        vis_backends: List[str] = [], **kwargs: Any
+        vis_backends: List[str] = [], 
+        seed: Optional[int] = None,
+        diff_rank_seed: bool = False,
+        deterministic: bool = False,
+        **kwargs: Any
     ) -> None:
         """
         Configure the MMEngine Runner with enhanced options for optimization and visualization.
@@ -167,6 +170,12 @@ class BaseMMengine(ABC):
         strategy = self.create_strategy(strategy_type, **kwargs.get('strategy_kwargs', {}))
         visualizer = self.create_visualizer(vis_backends, **kwargs)
 
+        randomness = dict(
+            seed=seed,
+            diff_rank_seed=diff_rank_seed,
+            deterministic=deterministic
+        )
+
         runner_config = dict(
             model=self.model,
             work_dir=work_dir,
@@ -179,10 +188,17 @@ class BaseMMengine(ABC):
             default_scope='mmengine',
             resume=resume,
             strategy=strategy,
-            visualizer=visualizer
+            visualizer=visualizer,
+            randomness=randomness  # Add randomness configuration
         )
 
         self.runner = Runner(**runner_config)
+        
+        if seed is not None:
+            logger.info(f"Setting random seed to {seed}, "
+                        f"deterministic: {deterministic}, "
+                        f"diff_rank_seed: {diff_rank_seed}")
+            set_random_seed(seed, deterministic=deterministic, diff_rank_seed=diff_rank_seed)
     
     def train(self) -> None:
         if not self.runner:
