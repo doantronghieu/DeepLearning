@@ -32,7 +32,7 @@
 
 #### ✅ Visualize Training Logs
 
-#### Set Random Seed
+#### ✅ Set Random Seed
 
 #### Debug Tricks
 

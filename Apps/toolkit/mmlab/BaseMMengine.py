@@ -1,6 +1,6 @@
 import torch
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Tuple, Type
+from typing import Dict, Any, Optional, Tuple, Type, List
 from loguru import logger
 from torch.utils.data import DataLoader
 from mmengine.model import BaseModel
@@ -101,6 +101,35 @@ class BaseMMengine(ABC):
         
         return optimizer_config
 
+    def create_visualizer(self, vis_backends: List[str], **kwargs) -> Dict[str, Any]:
+        """
+        Factory method to create a visualizer configuration based on the specified backends.
+        
+        Args:
+            vis_backends (List[str]): List of visualization backends to use
+            **kwargs: Additional keyword arguments for visualizer configuration
+        
+        Returns:
+            Dict[str, Any]: The visualizer configuration
+        """
+        vis_backends_config = []
+        for backend in vis_backends:
+            if backend == 'TensorBoard':
+                vis_backends_config.append(dict(type='TensorboardVisBackend'))
+            elif backend == 'WandB':
+                vis_backends_config.append(dict(type='WandbVisBackend', init_kwargs=kwargs.get('wandb_init', {})))
+            elif backend == 'ClearML':
+                vis_backends_config.append(dict(type='ClearMLVisBackend'))
+            elif backend == 'Neptune':
+                vis_backends_config.append(dict(type='NeptuneVisBackend', init_kwargs=kwargs.get('neptune_init', {})))
+            elif backend == 'DVCLive':
+                vis_backends_config.append(dict(type='DVCLiveVisBackend'))
+            elif backend == 'Aim':
+                vis_backends_config.append(dict(type='AimVisBackend'))
+            else:
+                logger.warning(f"Unsupported visualization backend: {backend}")
+
+        return dict(type='Visualizer', vis_backends=vis_backends_config)
     
     def configure_runner(
         self, work_dir: str, max_epochs: int, val_interval: int, 
@@ -110,15 +139,15 @@ class BaseMMengine(ABC):
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
         strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        **kwargs: Any
+        vis_backends: List[str] = [], **kwargs: Any
     ) -> None:
         """
-        Configure the MMEngine Runner with enhanced options for optimization and memory saving.
+        Configure the MMEngine Runner with enhanced options for optimization and visualization.
 
         Args:
             ... (previous arguments remain unchanged)
-            optimizer_type (str): Type of optimizer to use (default: 'SGD')
-            **kwargs: Additional keyword arguments for optimizer and strategy configuration
+            vis_backends (List[str]): List of visualization backends to use
+            **kwargs: Additional keyword arguments for configuration
         """
         if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric]):
             raise ValueError("Model, dataloaders, and metric must be set before configuring the runner.")
@@ -136,6 +165,7 @@ class BaseMMengine(ABC):
             optimizer_wrapper_cfg = {'optimizer': dict(type='HybridAdam', lr=1e-3)}
 
         strategy = self.create_strategy(strategy_type, **kwargs.get('strategy_kwargs', {}))
+        visualizer = self.create_visualizer(vis_backends, **kwargs)
 
         runner_config = dict(
             model=self.model,
@@ -148,9 +178,12 @@ class BaseMMengine(ABC):
             optim_wrapper=optimizer_wrapper_cfg,
             default_scope='mmengine',
             resume=resume,
-            strategy=strategy
+            strategy=strategy,
+            visualizer=visualizer
         )
-        
+
+        self.runner = Runner(**runner_config)
+    
     def train(self) -> None:
         if not self.runner:
             raise ValueError("Runner must be configured before starting training.")
@@ -170,7 +203,7 @@ class BaseMMengine(ABC):
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
         strategy_type: str = 'default', optimizer_type: str = 'SGD',
-        **kwargs: Any
+        vis_backends: List[str] = [], **kwargs: Any
     ) -> None:
         """
         Set up the entire pipeline with enhanced options for optimization and memory saving.
@@ -189,9 +222,10 @@ class BaseMMengine(ABC):
             compile_model (bool): Whether to use torch.compile (PyTorch 2.0+)
             efficient_conv_bn_eval (bool): Whether to use the experimental Efficient Conv BN Eval feature
             strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
+            vis_backends (List[str]): List of visualization backends to use
             **strategy_kwargs: Additional keyword arguments for strategy configuration
         """
-        logger.info(f"Setting up MMEngine pipeline with strategy: {strategy_type} and optimizer: {optimizer_type}")
+        logger.info(f"Setting up MMEngine pipeline with strategy: {strategy_type}, optimizer: {optimizer_type}, and visualization backends: {vis_backends}")
         try:
             self.model = self.build_model()
             self.train_dataloader, self.val_dataloader = self.build_dataset()
@@ -199,7 +233,7 @@ class BaseMMengine(ABC):
             self.configure_runner(
                 work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
                 use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-                strategy_type, optimizer_type, **kwargs
+                strategy_type, optimizer_type, vis_backends, **kwargs
             )
             logger.info("Enhanced pipeline setup completed successfully")
         except Exception as e:
@@ -213,7 +247,8 @@ class BaseMMengine(ABC):
         use_amp: bool = False, accumulative_counts: int = 1,
         use_grad_checkpoint: bool = False, compile_model: bool = False,
         efficient_conv_bn_eval: bool = False,
-        strategy_type: str = 'default', **strategy_kwargs: Any
+        strategy_type: str = 'default', optimizer_type: str = 'SGD',
+        vis_backends: List[str] = [], **kwargs: Any
     ) -> None:
         """
         Run a complete experiment with enhanced options for optimization and memory saving.
@@ -232,13 +267,14 @@ class BaseMMengine(ABC):
             compile_model (bool): Whether to use torch.compile (PyTorch 2.0+)
             efficient_conv_bn_eval (bool): Whether to use the experimental Efficient Conv BN Eval feature
             strategy_type (str): Type of training strategy to use ('default', 'deepspeed', 'fsdp', 'colossalai')
+            vis_backends (List[str]): List of visualization backends to use
             **strategy_kwargs: Additional keyword arguments for strategy configuration
         """
-        logger.info(f"Starting experiment with strategy: {strategy_type}")
+        logger.info(f"Starting experiment with strategy: {strategy_type} and visualization backends: {vis_backends}")
         self.setup(
             work_dir, max_epochs, val_interval, resume, load_from, distributed, launcher,
             use_amp, accumulative_counts, use_grad_checkpoint, compile_model, efficient_conv_bn_eval,
-            strategy_type, **strategy_kwargs
+            strategy_type, optimizer_type, vis_backends, **kwargs
         )
         self.train()
         logger.info("Enhanced experiment completed")
