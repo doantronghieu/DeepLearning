@@ -48,15 +48,9 @@
 
 #### ✅ Dataset and DataLoader
 
-#### ✅temp Model
+#### ✅ Model
 
-##### Runner and model
-
-##### Interface introduction
-
-##### DataPreprocessor
-
-#### Evaluation
+#### ✅temp Evaluation
 
 ##### Evaluation in model training or testing
 

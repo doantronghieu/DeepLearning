@@ -95,6 +95,7 @@ class BaseMMengine(ABC):
         self.val_dataloader: Optional[DataLoader] = None
         self.metric: Optional[BaseMetric] = None
         self.runner: Optional[Runner] = None
+        self.data_preprocessor: Optional[torch.nn.Module] = None
 
     @abstractmethod
     def build_model(self) -> BaseModel:
@@ -283,8 +284,8 @@ class BaseMMengine(ABC):
         Args:
             config (Dict[str, Any]): Configuration dictionary containing all necessary parameters
         """
-        if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric]):
-            raise ValueError("Model, dataloaders, and metric must be set before configuring the runner.")
+        if not all([self.model, self.train_dataloader, self.val_dataloader, self.metric, self.data_preprocessor]):
+            raise ValueError("Model, dataloaders, metric, and data preprocessor must be set before configuring the runner.")
 
         optimizer_wrapper_cfg = self._configure_optimizer(
             config['optimizer_type'], config['use_amp'], config['strategy_type'], **config
@@ -327,9 +328,10 @@ class BaseMMengine(ABC):
             'strategy': strategy,
             'visualizer': visualizer,
             'randomness': randomness,
-            'model_wrapper_cfg': model_wrapper_cfg
+            'model_wrapper_cfg': model_wrapper_cfg,
+            'data_preprocessor': self.data_preprocessor
         }
-
+        
         self.runner = Runner(**runner_config)
         
         if config.get('seed') is not None:
@@ -382,6 +384,7 @@ class BaseMMengine(ABC):
                     f"optimizer: {config.optimizer_type}, and visualization backends: {config.vis_backends}")
         try:
             self.model = self.build_model()
+            self.data_preprocessor = self.build_data_preprocessor()
             
             train_dataset = self.build_dataset(config.train_dataset)
             val_dataset = self.build_dataset(config.val_dataset)
