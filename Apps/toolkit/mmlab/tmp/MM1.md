@@ -18,62 +18,61 @@
 
 ### Common Usage
 
-#### ✅ Resume Training
+#### Resume Training
 
-#### ✅ Distributed Training
+#### Distributed Training
 
-#### ✅ Speed up Training
+#### Speed up Training
 
-#### ✅ Save Memory on GPU
+#### Save Memory on GPU
 
-#### ✅ Training Big Models
+#### Training Big Models
 
-#### ✅ Better performance optimizers
+#### Better performance optimizers
 
-#### ✅ Visualize Training Logs
+#### Visualize Training Logs
 
-#### ✅ Set Random Seed
+#### Set Random Seed
 
-#### ✅ Debug Tricks
+#### Debug Tricks
 
-#### ✅ Calculate the FLOPs and Parameters of Model
+#### Calculate the FLOPs and Parameters of Model
 
-#### ✅ Setting the Frequency of Logging, Checkpoint Saving, and Validation
+#### Setting the Frequency of Logging, Checkpoint Saving, and Validation
 
 #### EpochBasedTraining to IterBasedTraining
 
 ### Tutorials
 
-#### ✅ Runner
+#### Runner
 
-#### ✅ Dataset and DataLoader
+#### Dataset and DataLoader
 
-#### ✅ Model
+#### Model
 
-#### ✅ Evaluation
+#### Evaluation
 
-#### ✅ OptimWrapper
+#### OptimWrapper
 
-#### ✅ Parameter Scheduler
+#### Parameter Scheduler
 
-#### ✅ Hook
+#### Hook
 
-### ✅ Registry
+### Registry
 
 ### ✅temp Config
 
-### ✅ BaseDataset
+### BaseDataset
 
-### ✅ Data transform
+### Data transform
 
-### ✅ Weight initialization
+### Weight initialization
 
-### ✅ Visualization
+### Visualization
 
-### ✅temp Abstract Data Element
+### Abstract Data Element
 
-### ✅temp Distribution Communication
-
+### Distribution Communication
 
 ### Logging
 

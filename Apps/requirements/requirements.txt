@@ -52,6 +52,7 @@ scikit-learn
 tensorboard
 tqdm
 dataclasses
+dependency-injector
 
 # Deploy
 tritonclient

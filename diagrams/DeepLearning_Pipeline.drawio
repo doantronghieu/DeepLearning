@@ -1,0 +1,119 @@
+<mxfile host="Electron" modified="2024-08-08T04:37:47.159Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.4.0 Chrome/120.0.6099.109 Electron/28.1.0 Safari/537.36" etag="VoavPZksk-2gZG7TNff2" version="24.4.0" type="device">
+  <diagram name="Page-1" id="rtaS2-OJLTu18t1SHaJB">
+    <mxGraphModel dx="1080" dy="1863" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-38" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="20" y="130" width="550" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-4" value="&lt;span style=&quot;color: rgb(255, 51, 51); font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;REGISTRIES&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-38">
+          <mxGeometry width="550" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-8" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;OPTIMIZERS REGISTRY&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#007FFF;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-38">
+          <mxGeometry x="450" y="40" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-16" value="" style="group" vertex="1" connectable="0" parent="Fjgn4ftWI7KXRKHuzy5i-38">
+          <mxGeometry x="10" y="40" width="250" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-6" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;MODELS REGISTRY&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#007FFF;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-16">
+          <mxGeometry width="250" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-11" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;Open-Sources&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-16">
+          <mxGeometry x="110" y="30" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-12" value="" style="group" vertex="1" connectable="0" parent="Fjgn4ftWI7KXRKHuzy5i-16">
+          <mxGeometry x="10" y="30" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-9" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;MMLab&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-12">
+          <mxGeometry width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-10" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;MMYOLO&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#000000;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-12">
+          <mxGeometry x="10" y="30" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-13" value="&lt;font face=&quot;Comic Sans MS&quot;&gt;PyTorch&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-16">
+          <mxGeometry x="110" y="70" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-15" value="&lt;font face=&quot;Comic Sans MS&quot;&gt;Customer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-16">
+          <mxGeometry x="180" y="70" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-21" value="" style="group" vertex="1" connectable="0" parent="Fjgn4ftWI7KXRKHuzy5i-38">
+          <mxGeometry x="270" y="40" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-7" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;QUANT. BACKENDS REGISTRY&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#007FFF;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-21">
+          <mxGeometry width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-18" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;X86&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-21">
+          <mxGeometry x="10" y="40" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-19" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;XNNPack&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-21">
+          <mxGeometry x="50" y="40" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-20" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;RCAR&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-21">
+          <mxGeometry x="120" y="40" width="40" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-22" value="&lt;span style=&quot;font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;LOSSES REGISTRY&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#007FFF;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-38">
+          <mxGeometry x="450" y="90" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-39" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="580" y="130" width="480" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-23" value="&lt;font face=&quot;Comic Sans MS&quot; color=&quot;#ff3333&quot;&gt;QUANT. MANAGER&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry width="480" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-25" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizationConfig&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="10" y="40" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-28" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizationMetrics&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="130" y="40" width="130" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-30" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizerFactory&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;text-align: left;&quot;&gt;&lt;font color=&quot;#ff33ff&quot;&gt;QuantizerBase&lt;/font&gt;&lt;/span&gt;&lt;div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: initial;&quot;&gt;Stati&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;cQuantizer&lt;/font&gt;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;DynamicQuantizer&lt;/font&gt;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;QATQuantizer&lt;/font&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="10" y="80" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-31" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizationAnalyzer&lt;/span&gt;&lt;div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;get_model_size&lt;/font&gt;&lt;/span&gt;&lt;/div&gt;&lt;span style=&quot;text-align: left;&quot;&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;compare_models&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;benchmark_model&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;analyze_quantization&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;visualize_quantization&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;profile_model&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;...&lt;/font&gt;&lt;/div&gt;&lt;/span&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="280" y="120" width="140" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-32" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizationManager&lt;/span&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;prepare_model&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;_prepare_fx&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;quantize_model&lt;/font&gt;&lt;/div&gt;&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;...&lt;/font&gt;&lt;/div&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="140" y="80" width="132.5" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-27" value="&lt;span style=&quot;text-align: left;&quot;&gt;QuantizationBackendFactory&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;text-align: left;&quot;&gt;&lt;font color=&quot;#ff33ff&quot;&gt;QuantizationBackendBase&lt;/font&gt;&lt;/span&gt;&lt;div style=&quot;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;X86QuantizationBackend&lt;/div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;XNNPACKQuantizationBackend&lt;/div&gt;&lt;/font&gt;&lt;/div&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="Fjgn4ftWI7KXRKHuzy5i-39">
+          <mxGeometry x="280" y="40" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-41" value="&lt;span style=&quot;color: rgb(255, 51, 51); font-family: &amp;quot;Comic Sans MS&amp;quot;;&quot;&gt;TRAINING PIPELINE&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="20" y="-110" width="910" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-42" value="&lt;span style=&quot;text-align: left;&quot;&gt;&lt;font&gt;BaseModel&lt;/font&gt;&lt;/span&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;forward, inference, compute_loss, compute_prediction, freeze_layers, unfreeze_layers, load_pretrained_weights, get_layer_output, compute_shapes ...&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="1">
+          <mxGeometry x="30" y="-70" width="340" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-45" value="DataManager&lt;br&gt;&lt;font color=&quot;#ff00ff&quot;&gt;DataParams&lt;/font&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;load_data, preprocess_data, create_dataset, setup_transform, setup, _split_data, _create_data_loader&lt;/font&gt;&lt;/div&gt;" style="rounded=0;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="-70" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-48" value="&lt;span style=&quot;text-align: left;&quot;&gt;ModelStorageManager&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="1">
+          <mxGeometry x="30" y="10" width="140" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-50" value="&lt;span style=&quot;text-align: left;&quot;&gt;TrainingManager&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;text-align: left;&quot;&gt;&lt;font color=&quot;#ff00ff&quot;&gt;TrainingParams&lt;/font&gt;&lt;/span&gt;&lt;span style=&quot;text-align: left;&quot;&gt;&lt;br&gt;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: initial;&quot;&gt;load_model,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: initial;&quot;&gt;_forward_pass,&lt;/span&gt;&lt;/div&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_compute_loss,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_backward_pass,&lt;/span&gt;&lt;/div&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_prepare_batch,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_step,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;train_step,&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;val_step,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_run_epoch,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;train_epoch,&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;validate,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;train_loop,&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_update_scheduler,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_check_early_stopping,&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_save_checkpoint,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;test_loop,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;_log_progress&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;train&lt;/span&gt;&lt;/div&gt;&lt;/span&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;" vertex="1" parent="1">
+          <mxGeometry x="660" y="-70" width="260" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-59" value="MetricsManager&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;_initialize_metrics,&amp;nbsp;&lt;/font&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: initial;&quot;&gt;_initialize_single_metric,&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;_initialize_custom_metric, update, compute,&lt;/span&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: initial;&quot;&gt;&lt;br&gt;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;reset, [get/add/remove]_metric, log_metrics&lt;/span&gt;&lt;/div&gt;" style="rounded=0;verticalAlign=top;fontColor=#67AB9F;fontFamily=Comic Sans MS;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="30" width="270" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-61" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;dashed=1;dashPattern=1 1;strokeColor=#FFB570;strokeWidth=3;" edge="1" parent="1" source="Fjgn4ftWI7KXRKHuzy5i-23" target="Fjgn4ftWI7KXRKHuzy5i-50">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="820" y="100" />
+              <mxPoint x="950" y="100" />
+              <mxPoint x="950" y="-90" />
+              <mxPoint x="790" y="-90" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-62" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;strokeColor=#FFB570;strokeWidth=3;dashed=1;dashPattern=1 1;" edge="1" parent="1" source="Fjgn4ftWI7KXRKHuzy5i-6" target="Fjgn4ftWI7KXRKHuzy5i-42">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Fjgn4ftWI7KXRKHuzy5i-64" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;strokeColor=#FFB570;strokeWidth=3;dashed=1;dashPattern=1 1;" edge="1" parent="1" source="Fjgn4ftWI7KXRKHuzy5i-7" target="Fjgn4ftWI7KXRKHuzy5i-23">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
