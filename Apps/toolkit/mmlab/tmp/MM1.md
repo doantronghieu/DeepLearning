@@ -66,15 +66,15 @@
 
 ### ✅temp Data transform
 
-### Weight initialization
+### ✅ Weight initialization
 
-### Visualization
+### ✅temp Visualization
 
-### Abstract Data Element
+### ✅temp Abstract Data Element
 
 ### Distribution Communication
 
-### Logging
+### ✅ Logging
 
 ### File IO
 
@@ -88,9 +88,9 @@
 
 ## Design
 
-### Hook Design
+### ✅ Hook Design
 
-### Runner Design
+### ✅ temp Runner Design
 
 ### Evaluation Design
 

@@ -1,25 +1,25 @@
+# My code starts from here
 import numpy as np
 import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from typing import Any, Dict, Literal, Optional, Union, List, Callable, Type, TypeVar, Sequence
+from typing import Any, Dict, Optional, Union, List, Callable, TypeVar, Sequence
 from loguru import logger
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, Field, field_validator
 import asyncio
-from functools import partial
 import copy
-import warnings
 import os.path as osp
 
 from mmengine.registry import Registry, MODELS, DATASETS, METRICS, RUNNERS, HOOKS, OPTIMIZERS, DATA_SAMPLERS
 from mmengine.model import BaseModel as MMBaseModel
-from mmengine.runner import Runner
+from mmengine.model import BaseModule, constant_init, xavier_init, normal_init, trunc_normal_init, uniform_init, kaiming_init, caffe2_xavier_init
+from mmengine.runner import Runner, LogProcessor
 from mmengine.evaluator import BaseMetric
-from mmengine.hooks import Hook
+from mmengine.hooks import Hook as MMHook
 from mmengine.optim import OptimWrapper, AmpOptimWrapper, OptimWrapperDict
 from mmengine.visualization import Visualizer
 from mmengine.registry import init_default_scope
@@ -28,6 +28,7 @@ from mmengine.dataset import BaseDataset, ConcatDataset, RepeatDataset, ClassBal
 from mmengine.dist import is_distributed
 from mmengine.dataset import DefaultSampler, InfiniteSampler
 from mmengine.logging import MMLogger
+from mmengine.dist import init_dist
 from mmengine.evaluator import Evaluator
 from mmengine.fileio import load
 
@@ -59,6 +60,7 @@ class ModelConfig(BaseModel):
     head: Optional[Dict[str, Any]] = None
     data_preprocessor: Optional[Dict[str, Any]] = None
     feature_flags: Dict[str, bool] = Field(default_factory=dict)
+    init_cfg: Optional[Dict[str, Any]] = None  # Add this line
 
     @field_validator('type')
     def check_model_type(cls, v):
@@ -122,19 +124,23 @@ class MMEngineConfig(BaseModel):
     dataset_wrappers: Optional[Dict[str, Dict[str, Any]]] = None
     custom_imports: Optional[List[str]] = None
     
+    model_wrapper: Optional[Dict[str, Any]] = None
     model: ModelConfig
+    
     dataset: Dict[str, DatasetConfig]
     dataloader: Dict[str, DataLoaderConfig]
     
     optimizer: Union[OptimizerConfig, Dict[str, OptimizerConfig]]
     param_schedulers: List[ParamSchedulerConfig] = Field(default_factory=list)
+    amp_cfg: Dict[str, Any] = Field(default_factory=dict)
+    
     
     grad_accumulator: Optional[Dict[str, Any]] = None
     
     runner: RunnerConfig
     
     hooks: List[HookConfig] = Field(default_factory=list)
-    custom_hooks: List[HookConfig] = Field(default_factory=list)
+    custom_hooks: List[Dict[str, Any]] = Field(default_factory=list)
     
     feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
     
@@ -168,8 +174,13 @@ class MMEngineConfig(BaseModel):
         "backend": "nccl"
     })
     
+    log_processor: Dict[str, Any] = Field(default_factory=lambda: {
+        "window_size": 10,
+        "by_epoch": True,
+        "custom_cfg": None,
+        "num_digits": 4
+    })
     log_level: str = 'INFO'
-    log_processor: Dict[str, Any] = Field(default_factory=dict)
     
     default_scope: str = 'mmengine'
     default_hooks: Dict[str, Any] = Field(default_factory=lambda: {
@@ -193,6 +204,11 @@ class MMEngineConfig(BaseModel):
             "backend": "nccl"
         }
     })
+    
+    quantization: Optional[Dict[str, Any]] = None
+    pruning: Optional[Dict[str, Any]] = None
+
+    feature_flags: Dict[str, bool] = Field(default_factory=dict)
 
     @field_validator('default_scope')
     def check_default_scope(cls, v):
@@ -204,6 +220,20 @@ class MMEngineConfig(BaseModel):
         return {k: v.model_dump() if isinstance(v, BaseModel) else v 
                 for k, v in self.__dict__.items() if v is not None}
 
+class WeightInitializer:
+    @staticmethod
+    def register_custom_init(name: str, init_fn: Callable):
+        """Register a custom initialization function."""
+        setattr(WeightInitializer, name, staticmethod(init_fn))
+    
+    @staticmethod
+    def initialize(module: nn.Module, init_cfg: dict):
+        init_type = init_cfg['type']
+        if hasattr(WeightInitializer, init_type):
+            getattr(WeightInitializer, init_type)(module, **init_cfg.get('kwargs', {}))
+        else:
+            raise ValueError(f"Unsupported initialization type: {init_type}")
+
 class BaseMMEngine:
     def __init__(self, cfg: MMEngineConfig) -> None:
         self.cfg = cfg
@@ -211,8 +241,11 @@ class BaseMMEngine:
         self.dataset: Optional[Dict[str, BaseDataset]] = None
         self.metrics: Optional[List[BaseMetric]] = None
         self.runner: Optional[Runner] = None
+        self.log_processor = None
         self.visualizer: Optional[Visualizer] = None
-        self.logger = MMLogger.get_current_instance()
+        self.logger = MMLogger.get_instance(cfg.project_name)
+        self.hooks: List[GenericHook] = []
+        
 
     async def lazy_init(self, build_func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         return await asyncio.to_thread(build_func, *args, **kwargs)
@@ -220,10 +253,17 @@ class BaseMMEngine:
     async def build_model(self) -> None:
         try:
             model_cfg = self.cfg.model.model_dump()
+            
             if 'data_preprocessor' in model_cfg:
                 data_preprocessor = await self.lazy_init(MODELS.build, model_cfg['data_preprocessor'])
                 model_cfg['data_preprocessor'] = data_preprocessor
+            
             self.model = await self.lazy_init(CUSTOM_MODELS.build, model_cfg)
+            
+            if hasattr(self.model, 'init_weights'):
+                await self.lazy_init(self.model.init_weights)
+            elif model_cfg.get('init_cfg'):
+                await self.lazy_init(WeightInitializer.initialize, self.model, model_cfg['init_cfg'])
         except Exception as e:
             self.logger.error(f"Failed to build model: {str(e)}", exc_info=True)
             raise
@@ -232,6 +272,7 @@ class BaseMMEngine:
         self.dataset = {}
         for split, cfg in self.cfg.dataset.items():
             dataset = await self.lazy_init(CUSTOM_DATASETS.build, cfg.model_dump())
+            
             if self.cfg.dataset_wrappers:
                 for wrapper_name, wrapper_cfg in self.cfg.dataset_wrappers.items():
                     if wrapper_name == 'ConcatDataset':
@@ -240,6 +281,7 @@ class BaseMMEngine:
                         dataset = RepeatDataset(dataset, wrapper_cfg['times'])
                     elif wrapper_name == 'ClassBalancedDataset':
                         dataset = ClassBalancedDataset(dataset, wrapper_cfg['oversample_thr'])
+                        
             self.dataset[split] = dataset
 
     async def build_metrics(self) -> None:
@@ -278,14 +320,14 @@ class BaseMMEngine:
             for name, optim_cfg in self.cfg.optimizer.items():
                 optimizer = await self.lazy_init(OPTIMIZERS.build, optim_cfg.model_dump())
                 if self.cfg.feature_flags.use_amp:
-                    optimizers[name] = AmpOptimWrapper(optimizer=optimizer)
+                    optimizers[name] = AmpOptimWrapper(optimizer=optimizer, **self.cfg.amp_cfg)
                 else:
                     optimizers[name] = OptimWrapper(optimizer=optimizer)
             return OptimWrapperDict(**optimizers)
         else:
             optimizer = await self.lazy_init(OPTIMIZERS.build, self.cfg.optimizer.model_dump())
             if self.cfg.feature_flags.use_amp:
-                return AmpOptimWrapper(optimizer=optimizer)
+                return AmpOptimWrapper(optimizer=optimizer, **self.cfg.amp_cfg)
             else:
                 return OptimWrapper(optimizer=optimizer)
 
@@ -299,8 +341,23 @@ class BaseMMEngine:
         else:
             return []
 
+    async def build_log_processor(self) -> None:
+        custom_cfg: list = self.cfg.log_processor.get('custom_cfg', [])
+        custom_cfg.extend([
+            dict(data_src='loss', method_name='mean', window_size='global'),
+            dict(data_src='lr', method_name='current', window_size=1)
+        ])
+        self.cfg.log_processor['custom_cfg'] = custom_cfg
+        self.log_processor = LogProcessor(**self.cfg.log_processor)
+    
+    async def build_hooks(self) -> None:
+        for hook_cfg in self.cfg.hooks:
+            hook = await self.lazy_init(CUSTOM_HOOKS.build, hook_cfg.model_dump())
+            self.hooks.append(hook)
+    
     async def build_runner(self) -> None:
         runner_cfg = self.cfg.runner.model_dump()
+        
         runner_cfg.update({
             'model': self.model,
             'train_dataloader': await self._build_dataloader('train'),
@@ -308,15 +365,42 @@ class BaseMMEngine:
             'val_evaluator': self.metrics,
             'optim_wrapper': await self.build_optimizer(),
             'param_scheduler': await self.build_param_scheduler(),
+            'log_processor': self.log_processor,
+            'logger': self.logger,
+            'visualizer': self.visualizer,
+            'default_hooks': self.cfg.default_hooks,
+            'custom_hooks': self.hooks,
         })
+        
         if self.cfg.feature_flags.use_gradient_accumulation and self.cfg.grad_accumulator:
             runner_cfg['grad_accumulator'] = await self.lazy_init(HOOKS.build, self.cfg.grad_accumulator)
-        if self.cfg.feature_flags.use_custom_hooks and self.cfg.hooks:
-            runner_cfg['custom_hooks'] = [await self.lazy_init(CUSTOM_HOOKS.build, hook.model_dump()) for hook in self.cfg.hooks]
+            
+        default_hooks = {
+            'timer': dict(type='IterTimerHook'),
+            'logger': dict(type='LoggerHook', interval=50),
+            'param_scheduler': dict(type='ParamSchedulerHook'),
+            'checkpoint': dict(type='CheckpointHook', interval=1),
+            'sampler_seed': dict(type='DistSamplerSeedHook'),
+        }
+        runner_cfg['default_hooks'] = default_hooks
+        
+        runner_cfg['custom_hooks'] = self.hooks
+            
         if self.cfg.visualizer:
             self.visualizer = await self.lazy_init(Visualizer.from_config, self.cfg.visualizer.model_dump())
             runner_cfg['visualizer'] = self.visualizer
+            
         self.runner: Runner = await self.lazy_init(RUNNERS.build, runner_cfg)
+
+    async def custom_log(self, log_name: str, value: float, prefix: str = 'train') -> None:
+        """Add custom log during training or evaluation."""
+        if self.runner is None:
+            raise ValueError("Runner is not built. Call build_runner() first.")
+        self.logger.info(f'{prefix}/{log_name}: {value}')
+        
+        # Visualize the log if visualizer is available
+        if self.visualizer:
+            self.visualizer.add_scalar(f'{prefix}/{log_name}', value, self.runner.iter)
 
     async def run(self) -> None:
         if self.runner is None:
@@ -333,10 +417,26 @@ class BaseMMEngine:
 
 @CUSTOM_MODELS.register_module()
 class GenericModel(MMBaseModel):
-    def __init__(self, components: Dict[str, nn.Module], forward_sequence: List[str]):
-        super().__init__()
-        self.components = nn.ModuleDict({name: MODELS.build(comp) for name, comp in components.items()})
+    def __init__(self, components: Dict[str, Union[nn.Module, Dict]], forward_sequence: List[str], init_cfg: Optional[Dict[str, Any]] = None):
+        super().__init__(init_cfg=init_cfg)
+        self.components = nn.ModuleDict()
+        for name, comp in components.items():
+            if isinstance(comp, dict):
+                self.components[name] = MODELS.build(comp)
+            else:
+                self.components[name] = comp
         self.forward_sequence = forward_sequence
+        self.init_cfg = init_cfg
+
+    def init_weights(self):
+        if self.init_cfg:
+            for name, module in self.components.items():
+                if isinstance(module, BaseModule):
+                    module.init_weights()
+                else:
+                    WeightInitializer.initialize(module, self.init_cfg)
+        else:
+            super().init_weights()
 
     def forward(self, inputs: torch.Tensor, labels: Optional[torch.Tensor] = None, mode: str = 'loss') -> Dict[str, Any]:
         x = inputs
@@ -371,6 +471,7 @@ class GenericDataset(BaseDataset):
         lazy_init: bool = False,
         serialize_data: bool = True,
         data_loader: Optional[Callable] = None,
+        *args, **kwargs
     ):
         self.data_root = data_root
         self.ann_file = ann_file
@@ -378,6 +479,8 @@ class GenericDataset(BaseDataset):
         self.test_mode = test_mode
         self.serialize_data = serialize_data
         self.data_loader = data_loader
+        self.transform = kwargs.pop('transform', None)
+        
         super().__init__(
             ann_file=ann_file,
             data_root=data_root,
@@ -425,6 +528,27 @@ class GenericDataset(BaseDataset):
         
         self.data_list = [self.get_data_info(idx) for idx in indices]
         self.cumulative_sizes = None
+    
+    def prepare_data(self, idx: int) -> Any:
+        """Prepare data for model input."""
+        data = self.get_data_info(idx)
+        if self.transform:
+            data = self.transform(data)
+        return data
+
+    def __getitem__(self, idx: int) -> Any:
+        return self.prepare_data(idx)
+
+@MODELS.register_module()
+class GenericPreprocessor(nn.Module):
+    def __init__(self, transforms: List[Dict[str, Any]]):
+        super().__init__()
+        self.transforms = nn.ModuleList([MODELS.build(t) for t in transforms])
+
+    def forward(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        for transform in self.transforms:
+            data = transform(data)
+        return data
 
 @CUSTOM_METRICS.register_module()
 class GenericMetric(BaseMetric):
@@ -443,7 +567,7 @@ class GenericMetric(BaseMetric):
         return metrics
 
 @CUSTOM_HOOKS.register_module()
-class GenericHook(Hook):
+class GenericHook(MMHook):
     def __init__(self, priority: int = 50):
         self._priority = priority
 
@@ -452,30 +576,62 @@ class GenericHook(Hook):
         return self._priority
 
     def before_run(self, runner: Runner) -> None:
-        self.logger.info("Starting run")
+        logger.info("Starting run")
 
     def after_run(self, runner: Runner) -> None:
-        self.logger.info("Run completed")
+        logger.info("Run completed")
 
     def before_train(self, runner: Runner) -> None:
-        self.logger.info("Starting training")
+        logger.info("Starting training")
 
     def after_train(self, runner: Runner) -> None:
-        self.logger.info("Training completed")
+        logger.info("Training completed")
 
     def before_train_epoch(self, runner: Runner) -> None:
-        self.logger.info(f"Starting epoch {runner.epoch}")
+        logger.info(f"Starting epoch {runner.epoch}")
 
     def after_train_epoch(self, runner: Runner) -> None:
-        self.logger.info(f"Epoch {runner.epoch} completed")
+        logger.info(f"Epoch {runner.epoch} completed")
 
     def before_train_iter(self, runner: Runner) -> None:
         if runner.iter % runner.log_interval == 0:
-            self.logger.info(f"Starting iteration {runner.iter}")
+            logger.info(f"Starting iteration {runner.iter}")
 
     def after_train_iter(self, runner: Runner) -> None:
         if runner.iter % runner.log_interval == 0:
-            self.logger.info(f"Iteration {runner.iter} completed")
+            logger.info(f"Iteration {runner.iter} completed")
+
+    def before_val(self, runner: Runner) -> None:
+        logger.info("Starting validation")
+
+    def after_val(self, runner: Runner) -> None:
+        logger.info("Validation completed")
+
+    def before_test(self, runner: Runner) -> None:
+        logger.info("Starting testing")
+
+    def after_test(self, runner: Runner) -> None:
+        logger.info("Testing completed")
+
+@CUSTOM_HOOKS.register_module()
+class LoggingHook(GenericHook):
+    def __init__(self, log_interval: int = 10, priority: int = 50):
+        super().__init__(priority)
+        self.log_interval = log_interval
+
+    def after_train_iter(self, runner: Runner) -> None:
+        if runner.iter % self.log_interval == 0:
+            logger.info(f"Iteration {runner.iter} completed. Loss: {runner.outputs['loss']:.4f}")
+
+@CUSTOM_HOOKS.register_module()
+class ValidationHook(GenericHook):
+    def __init__(self, interval: int = 1, priority: int = 50):
+        super().__init__(priority)
+        self.interval = interval
+
+    def after_train_epoch(self, runner: Runner) -> None:
+        if runner.epoch % self.interval == 0:
+            runner.val_loop.run()
 
 class VisualizerWrapper(Visualizer):
     def __init__(self, *args, **kwargs):
@@ -515,10 +671,24 @@ class VisualizerWrapper(Visualizer):
 
 @hydra.main(config_path="configs", config_name="config")
 def main(cfg: DictConfig) -> None:
+    logger = MMLogger.get_instance(cfg.project_name)
     logger.info("Starting MMEngine pipeline")
     
     # Convert Hydra config to a regular dict
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+    
+    cfg_dict["model"]["init_cfg"] = {
+        'type': 'Kaiming',
+        'layer': 'Conv2d',
+        'a': 0,
+        'mode': 'fan_out',
+        'nonlinearity': 'relu'
+    }
+    
+    cfg_dict['hooks'] = [
+        {'type': 'LoggingHook', 'log_interval': 100},
+        {'type': 'ValidationHook', 'interval': 1}
+    ]
     
     # Initialize MMEngine config
     config = MMEngineConfig(**cfg_dict)
@@ -540,6 +710,8 @@ def main(cfg: DictConfig) -> None:
         asyncio.run(engine.build_model())
         asyncio.run(engine.build_dataset())
         asyncio.run(engine.build_metrics())
+        asyncio.run(engine.build_log_processor())
+        asyncio.run(engine.build_hooks())
         asyncio.run(engine.build_runner())
         
         if cfg.get('offline_evaluation'):
