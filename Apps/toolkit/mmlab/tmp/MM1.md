@@ -44,17 +44,17 @@
 
 ### Tutorials
 
-#### Runner
+#### ✅ Runner
 
-#### Dataset and DataLoader
+#### ✅ Dataset and DataLoader
 
-#### Model
+#### ✅ Model
 
-#### Evaluation
+#### ✅ Evaluation
 
-#### OptimWrapper
+#### ✅ OptimWrapper
 
-#### Parameter Scheduler
+#### ✅ Parameter Scheduler
 
 #### Hook
 
@@ -62,9 +62,9 @@
 
 ### ✅temp Config
 
-### BaseDataset
+### ✅ BaseDataset
 
-### Data transform
+### ✅temp Data transform
 
 ### Weight initialization
 
