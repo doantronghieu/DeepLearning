@@ -1,7 +1,8 @@
 # Project configuration
 project_name = 'MODEL DATASET'
 work_dir = './exp/MODEL_DATASET'
-seed = 42
+
+randomness = dict(seed=42)
 
 # Model configuration
 model = dict(
@@ -38,11 +39,17 @@ model = dict(
 
 # DataLoader configuration
 # https://pytorch.org/docs/stable/data.html
+# https://github.com/open-mmlab/mmpretrain/blob/main/configs/_base_/datasets/cifar100_bs16.py
+dataset_type = 'CIFAR100'
+dataset_root = 'data/cifar100'
 train_dataloader = dict(
     dataset = dict(
-        type='MyDataset', is_train=True, size=10000,
+        type=dataset_type,
+        data_root=dataset_root,
+        split='train',
+        # size=5000, # [DEBUG] every epoch only iterator N samples
     ),
-    batch_size=2,
+    batch_size=32,
     num_workers=2,
     sampler=dict(type='DefaultSampler', shuffle=True),
     collate_fn=dict(type='default_collate'),
@@ -51,9 +58,12 @@ train_dataloader = dict(
 )
 val_dataloader = dict(
     dataset = dict(
-        type='MyDataset', is_train=True, size=1000,
+        type=dataset_type,
+        data_root=dataset_root,
+        split='test',
+        # size=5000, # [DEBUG] every epoch only iterator N samples
     ),
-    batch_size=1,
+    batch_size=32,
     num_workers=2,
     sampler=dict(type='DefaultSampler', shuffle=False),
     collate_fn=dict(type='default_collate'),
@@ -79,11 +89,14 @@ evaluation = dict(
 
 # Optimizer configuration
 # https://pytorch.org/docs/stable/optim.html
+# https://mmengine.readthedocs.io/en/latest/common_usage/better_optimizers.html
 optim_wrapper = dict(
+    type='OptimWrapper', # 'OptimWrapper', 'AmpOptimWrapper'
+    # accumulative_counts=4, # update every four times
     optimizer = dict(
-        type='Adam',
-        lr=0.001,
-        weight_decay=0.0001,
+        type='Adam', # DAdaptAdaGrad, Adam, AdamW8bit, Lion
+        lr=1e-3, # 1e-3, 1e-4
+        weight_decay=1e-4, # 1e-2, 1e-4
         momentum=0.9
     )
 )
@@ -105,6 +118,10 @@ runner = dict(
     max_epochs=12,
     val_interval=1,
     log_interval=50
+)
+
+cfg = dict(
+    # compile=True,
 )
 
 # Hooks configuration
@@ -132,11 +149,21 @@ checkpoint = dict(
 )
 
 # Visualizer configuration
+# https://mmengine.readthedocs.io/en/latest/api/generated/mmengine.visualization.WandbVisBackend.html#mmengine.visualization.WandbVisBackend
 visualizer = dict(
-    type='LocalVisBackend',
-    save_dir='visual_results',
-    vis_backends=[dict(type='LocalVisBackend')]
+    type='Visualizer', # Visualizer, LocalVisBackend
+    vis_backends=[
+        dict(
+            type='WandbVisBackend' # LocalVisBackend, WandbVisBackend
+        )
+    ],
+    init_kwargs=dict(
+        project='toy-example',
+    ),
+    # save_dir='visual_results',
 )
+
+visualizer=dict(type='Visualizer', vis_backends=[dict(type='WandbVisBackend')])
 
 # Resume and load from configuration
 resume_from = None

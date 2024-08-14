@@ -192,8 +192,6 @@
 
 [Resume Training](https://mmengine.readthedocs.io/en/latest/common_usage/resume_training.html)
 
-[Distributed Training](https://mmengine.readthedocs.io/en/latest/common_usage/distributed_training.html)
-
 [Speed up Training](https://mmengine.readthedocs.io/en/latest/common_usage/speed_up_training.html)
 
 [Save Memory on GPU](https://mmengine.readthedocs.io/en/latest/common_usage/save_gpu_memory.html)
@@ -207,6 +205,8 @@
 [Setting the Frequency of Logging, Checkpoint Saving, and Validation](https://mmengine.readthedocs.io/en/latest/common_usage/set_interval.html)
 
 [EpochBasedTraining to IterBasedTraining](https://mmengine.readthedocs.io/en/latest/common_usage/epoch_to_iter.html)
+
+[Distributed Training](https://mmengine.readthedocs.io/en/latest/common_usage/distributed_training.html)
 
 ### Config-related
 

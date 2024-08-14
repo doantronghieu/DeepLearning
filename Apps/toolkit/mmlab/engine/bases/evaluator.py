@@ -42,7 +42,7 @@ class MyEvaluator(Evaluator):
             data_batch: A batch of data from the dataloader.
             data_samples: A batch of outputs from the model.
         """
-        for metric in self.metrics.values():
+        for metric in self.metrics:
             metric.process(data_batch, data_samples)
 
     def evaluate(self, size: int) -> Dict[str, float]:
@@ -55,9 +55,9 @@ class MyEvaluator(Evaluator):
             A dictionary of all evaluation metrics.
         """
         results = {}
-        for metric_name, metric in self.metrics.items():
+        for metric in self.metrics:
             metric_results = metric.evaluate(size)
-            results.update({f"{metric_name}/{k}": v for k, v in metric_results.items()})
+            results.update({f"{metric.default_prefix}/{k}": v for k, v in metric_results.items()})
         return results
 
 # Example usage:

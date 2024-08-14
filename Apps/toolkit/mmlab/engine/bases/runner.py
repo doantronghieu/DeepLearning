@@ -40,6 +40,8 @@ class RunnerConfig:
     default_hooks: Dict[str, Any] = field(default_factory=dict)
     launcher: str = 'none'
     env_cfg: Dict[str, Any] = field(default_factory=dict)
+    resume: bool = False  # New field for resume functionality
+    cfg: Dict
 
 class RunnerManager:
     def __init__(self, config_file: str):
@@ -59,6 +61,7 @@ class RunnerManager:
             train_cfg=self.runner_config.train_cfg,
             val_cfg=self.runner_config.val_cfg,
             test_cfg=None,  # Not provided in the config, add if needed
+            cfg=self.runner_config.cfg,
             auto_scale_lr=None,  # Not provided in the config, add if needed
             optim_wrapper=self.runner_config.optim_wrapper,
             param_scheduler=self.runner_config.param_schedulers,
@@ -68,7 +71,7 @@ class RunnerManager:
             custom_hooks=self.runner_config.hooks,
             data_preprocessor=self.runner_config.model.get('data_preprocessor'),
             load_from=self.runner_config.load_from,
-            resume=self.runner_config.resume_from is not None,
+            resume=self.runner_config.resume,
             launcher=self.runner_config.launcher,
             env_cfg=self.runner_config.env_cfg,
             log_processor=self.runner_config.log_processor,
@@ -96,11 +99,6 @@ class RunnerManager:
         if custom_cfg is not None:
             self.runner_config.log_processor['custom_cfg'] = custom_cfg
         self.runner.logger.setLevel(self.runner_config.log_level)
-
-    def set_random_seed(self, seed: int) -> None:
-        """Set random seed for reproducibility."""
-        self.runner_config.seed = seed
-        self.runner.set_random_seed(seed)
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
         """Load a checkpoint for the model."""
