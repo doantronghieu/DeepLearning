@@ -66,10 +66,11 @@ The spirit of my original code: The code needs to be general-purpose, flexible, 
 
 ---
 
-(OpenMMLab) Based on the provided documents, help me create an abstract RunnerManager (or another class name you think is appropriate) that can be utilized for a variety of use cases. The class should be designed to be general-purpose, flexible, and domain-agnostic, allowing it to be used across different applications. To demonstrate its functionality, you should provide an example of a method within the class. Remember to use type hinting when you are coding.
+
+(OpenMMLab) Based on the provided documents, help me create an abstract RegistryManager (or another class name you think is appropriate) that can be utilized for a variety of use cases. The class should be designed to be general-purpose, flexible, and domain-agnostic, allowing it to be used across different applications. To demonstrate its functionality, you should provide an example of a method within the class. Remember to use type hinting when you are coding.
 
 
-
+Use default registry from from mmengine.registry import build_runner_from_cfg, build_model_from_cfg, build_scheduler_from_cfg, MODELS, RUNNERS, RUNNER_CONSTRUCTORS, LOOPS, HOOKS, STRATEGIES, DATASETS, DATA_SAMPLERS, TRANSFORMS, MODEL_WRAPPERS, WEIGHT_INITIALIZERS, OPTIMIZERS, OPTIM_WRAPPERS, OPTIM_WRAPPER_CONSTRUCTORS, PARAM_SCHEDULERS, METRICS, EVALUATOR, TASK_UTILS, VISUALIZERS, VISBACKENDS, LOG_PROCESSORS, INFERENCERS, FUNCTIONS
 
 
 
