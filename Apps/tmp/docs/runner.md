@@ -757,7 +757,7 @@ runner.train()
 
 Example log output:
 
-```
+```text
 08/21 18:39:32 - mmengine - INFO - Epoch(train) [1][10/25]  lr: 1.0000e-02  eta: 0:00:00  time: 0.0016  data_time: 0.0004  loss1: 0.1512  loss2: 0.3751  loss: 0.5264  loss1_global: 0.1512
 08/21 18:39:32 - mmengine - INFO - Epoch(train) [1][20/25]  lr: 1.0000e-02  eta: 0:00:00  time: 0.0051  data_time: 0.0036  loss1: 0.0113  loss2: 0.0856  loss: 0.0970  loss1_global: 0.0813
 ```
@@ -789,7 +789,7 @@ runner.train()
 
 Example log output:
 
-```
+```text
 08/21 03:17:26 - mmengine - INFO - Epoch(train) [1][10/25]  lr: 1.0000e-02  eta: 0:00:00  time: 0.0021  data_time: 0.0006  loss1: 1.8495  loss2: 1.3427  loss: 3.1922  loss1_local_max: 2.8872  loss1_global_max: 2.8872
 08/21 03:17:26 -
 
@@ -873,7 +873,7 @@ runner.train()
 
 Example debug log output:
 
-```
+```text
 08/21 18:16:22 - mmengine - DEBUG - Get class `LocalVisBackend` from "vis_backend" registry in "mmengine"
 08/21 18:16:22 - mmengine - DEBUG - An `LocalVisBackend` instance is built from registry, its implementation can be found in mmengine.visualization.vis_backend
 08/21 18:16:22 - mmengine - DEBUG - Get class `RuntimeInfoHook` from "hook" registry in "mmengine"
@@ -884,7 +884,7 @@ Example debug log output:
 
 Besides, logs of different ranks will be saved in debug mode if you are training your model with shared storage. The hierarchy of the log is as follows:
 
-```
+```text
 ./tmp
 ├── tmp.log
 ├── tmp_rank1.log
@@ -900,7 +900,7 @@ Besides, logs of different ranks will be saved in debug mode if you are training
 
 For multiple machines with independent storage:
 
-```
+```text
 # device: 0:
 work_dir/
 └── exp_name_logs
@@ -919,3 +919,4 @@ work_dir/
     ├── exp_name_rank58.log
     ...
     └── exp_name_rank63.log
+```

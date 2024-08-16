@@ -1129,3 +1129,5 @@ pipeline = [
 ```
 
 Please note that to use the class in our config file, we need to confirm the `MyFlip` class will be imported during runtime.
+
+---
