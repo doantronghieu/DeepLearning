@@ -100,4 +100,4 @@ for batch in linear_regression_dm:
 single_batch = linear_regression_dm.get_batch()
 print(f"Single batch features shape: {single_batch['features'].shape}")
 
-# TODO: Write PytestPda
+# TODO: Write Pytest

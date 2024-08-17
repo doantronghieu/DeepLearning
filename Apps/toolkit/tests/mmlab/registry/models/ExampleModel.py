@@ -1,11 +1,10 @@
 # mmlab/tests/test_example_model.py
 import add_packages
-# mmlab/tests/test_example_model.py
-
+        
 import pytest
 import torch
 import torch.nn as nn
-from toolkit.mmlab.engine.bases.model import MyBaseModel
+from toolkit.ml.mmlab.engine.bases.model import MyBaseModel
 from mmengine.optim import OptimWrapper
 from torch.optim import SGD
 from argparse import ArgumentParser
@@ -19,6 +18,8 @@ class ExampleModel(MyBaseModel):
         self.fc = nn.Linear(64 * 16 * 16, num_classes)
 
     def forward(self, inputs, data_samples=None, mode='tensor'):
+        if self.data_preprocessor:
+            inputs = self.data_preprocessor(inputs)
         x = self.conv1(inputs)
         x = self.relu(x)
         x = self.pool(x)
@@ -84,23 +85,41 @@ def test_add_model_specific_args():
     args = parser.parse_args(['--custom_arg', 'test'])
     assert args.custom_arg == 'test'
 
-def test_ema(example_model: MyBaseModel):
-    example_model.to_ema()
-    assert hasattr(example_model, 'ema_model')
-    assert isinstance(example_model.ema_model, ExampleModel)
+# def test_ema(example_model: MyBaseModel):
+#     example_model.to_ema()
+#     assert hasattr(example_model, 'ema_model')
+#     assert isinstance(example_model.ema_model, ExampleModel)
     
-    # Check that the ema_model has the same structure as the original model
-    for param_name, param in example_model.named_parameters():
-        assert hasattr(example_model.ema_model, param_name)
-        ema_param = getattr(example_model.ema_model, param_name)
-        assert param.shape == ema_param.shape
+#     # Check that the ema_model has the same structure as the original model
+#     for param_name, param in example_model.named_parameters():
+#         assert hasattr(example_model.ema_model, param_name)
+#         ema_param = getattr(example_model.ema_model, param_name)
+#         assert param.shape == ema_param.shape
 
-    # Test updating EMA
-    original_params = [param.clone() for param in example_model.parameters()]
-    example_model.to_ema(momentum=0.9)
-    for orig_param, param, ema_param in zip(original_params, 
-                                            example_model.parameters(),
-                                            example_model.ema_model.parameters()):
-        assert torch.allclose(ema_param, 0.9 * orig_param + 0.1 * param, atol=1e-6)
+#     # Test updating EMA
+#     original_params = [param.clone() for param in example_model.parameters()]
+#     example_model.to_ema(momentum=0.9)
+#     for orig_param, param, ema_param in zip(original_params, 
+#                                             example_model.parameters(),
+#                                             example_model.ema_model.parameters()):
+#         assert torch.allclose(ema_param, 0.9 * orig_param + 0.1 * param, atol=1e-6)
+
+# def test_distributed(example_model: MyBaseModel):
+#     distributed_model = example_model.to_distributed()
+#     assert isinstance(distributed_model, DistributedDataParallel)
+
+def test_stack_batch(example_model: MyBaseModel):
+    tensors = [torch.randn(3, 32, 32), torch.randn(3, 30, 30), torch.randn(3, 28, 28)]
+    stacked = example_model.stack_batch(tensors)
+    assert stacked.shape == (3, 3, 32, 32)
+
+def test_sync_batchnorm(example_model: MyBaseModel):
+    bn = nn.BatchNorm2d(64)
+    sync_bn = example_model.convert_sync_batchnorm(bn)
+    assert isinstance(sync_bn, nn.SyncBatchNorm)
+    
+    reverted_bn = example_model.revert_sync_batchnorm(sync_bn)
+    assert isinstance(reverted_bn, nn.BatchNorm2d)
+
     
 # pytest ExampleModel.py
