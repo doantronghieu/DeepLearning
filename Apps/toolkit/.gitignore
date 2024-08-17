@@ -1,0 +1,15 @@
+**/data
+**/__pycache__
+**/cache
+**/work_dir
+**/.env
+**/.vscode
+
+Apps/data
+Apps/__pycache__
+Apps/cache
+Apps/.env
+Apps/.vscode
+
+.aider*
+**/extracted_files.txt

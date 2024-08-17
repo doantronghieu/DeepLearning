@@ -1,3 +1,5 @@
+# ml/mmlab/engine/bases/data.py
+
 from typing import Any, Dict, List, Union, Optional, Tuple
 from abc import ABC, abstractmethod
 
@@ -18,22 +20,27 @@ class DataManager(ABC):
         transform_configs: Optional[List[Dict[str, Any]]] = None,
         dataset_wrapper: Optional[str] = None,
         sampler_config: Optional[Dict[str, Any]] = None,
+        lazy_init: bool = False,
+        serialize_data: bool = True,
     ):
         self.dataset_configs = dataset_configs if isinstance(dataset_configs, list) else [dataset_configs]
         self.dataloader_config = dataloader_config
-        self.transform_configs = transform_configs
+        self.transform_configs = transform_configs or []
         self.dataset_wrapper = dataset_wrapper
         self.sampler_config = sampler_config or {'type': 'DefaultSampler', 'shuffle': True}
+        self.lazy_init = lazy_init
+        self.serialize_data = serialize_data
         
         self.datasets: List[BaseDataset] = []
         self.dataloader: Optional[DataLoader] = None
         self.transforms: Optional[Compose] = None
 
-    def build_transforms(self) -> Compose:
-        """Build transforms based on the configuration."""
+        if not self.lazy_init:
+            self.prepare_data()
+
+    def build_transforms(self) -> Optional[Compose]:
         if not self.transform_configs:
-            return Compose([])
-        
+            return None
         built_transforms = []
         for transform_config in self.transform_configs:
             transform_type = transform_config.pop('type')
@@ -42,16 +49,17 @@ class DataManager(ABC):
         return Compose(built_transforms)
 
     def build_datasets(self) -> List[BaseDataset]:
-        """Build datasets based on the configurations."""
         datasets = []
         for config in self.dataset_configs:
-            dataset_type = config.pop('type')
-            dataset = DATASETS.build(dict(type=dataset_type, **config))
+            config_copy = config.copy()
+            dataset_type = config_copy.pop('type')
+            if self.transforms:
+                config_copy['pipeline'] = self.transforms
+            dataset = DATASETS.build(dict(type=dataset_type, serialize_data=self.serialize_data, **config_copy))
             datasets.append(dataset)
         return datasets
 
     def apply_dataset_wrapper(self, datasets: List[BaseDataset]) -> BaseDataset:
-        """Apply dataset wrapper if specified."""
         if len(datasets) > 1:
             dataset = ConcatDataset(datasets)
         else:
@@ -62,71 +70,82 @@ class DataManager(ABC):
                 dataset = RepeatDataset(dataset, times=self.dataloader_config.get('times', 1))
             elif self.dataset_wrapper == 'ClassBalancedDataset':
                 dataset = ClassBalancedDataset(dataset, oversample_thr=self.dataloader_config.get('oversample_thr', 1e-3))
+            else:
+                raise ValueError(f"Unsupported dataset wrapper: {self.dataset_wrapper}")
         
         return dataset
 
     def build_sampler(self, dataset: BaseDataset) -> Any:
-        """Build sampler based on the configuration."""
-        sampler_type = self.sampler_config.pop('type')
+        sampler_type = self.sampler_config.get('type', 'DefaultSampler')
+        sampler_config = {k: v for k, v in self.sampler_config.items() if k != 'type'}
         if sampler_type == 'DefaultSampler':
-            return DefaultSampler(dataset, **self.sampler_config)
+            return DefaultSampler(dataset, **sampler_config)
         else:
-            return DATASETS.build(dict(type=sampler_type, dataset=dataset, **self.sampler_config))
+            return DATASETS.build(dict(type=sampler_type, dataset=dataset, **sampler_config))
 
     def prepare_data(self) -> None:
-        """Prepare the dataset, transforms, and dataloader."""
         self.transforms = self.build_transforms()
         self.datasets = self.build_datasets()
         dataset = self.apply_dataset_wrapper(self.datasets)
         
         sampler = self.build_sampler(dataset)
         
+        collate_fn = self.dataloader_config.get('collate_fn', self.collate_fn)
+        if isinstance(collate_fn, dict):
+            collate_fn = DATASETS.build(collate_fn)
+        elif collate_fn is None:
+            collate_fn = self.collate_fn
+        
         self.dataloader = DataLoader(
             dataset,
             sampler=sampler,
             batch_size=self.dataloader_config.get('batch_size', 1),
             num_workers=self.dataloader_config.get('num_workers', 0),
-            collate_fn=self.collate_fn,
-            **{k: v for k, v in self.dataloader_config.items() if k not in ['batch_size', 'num_workers']}
+            collate_fn=collate_fn,
+            **{k: v for k, v in self.dataloader_config.items() if k not in ['batch_size', 'num_workers', 'collate_fn']}
         )
 
     def get_data_element(self, idx: int) -> BaseDataElement:
-        """Get a single data element from the dataset."""
         if not self.datasets:
-            raise ValueError("Datasets have not been prepared. Call prepare_data() first.")
-        return self.datasets[0][idx]  # Assumes at least one dataset
+            self.prepare_data()
+        if len(self.datasets) == 1:
+            return self.datasets[0][idx]
+        else:
+            for dataset in self.datasets:
+                if idx < len(dataset):
+                    return dataset[idx]
+                idx -= len(dataset)
+            raise IndexError("Index out of range")
 
-    def apply_transforms(self, data_element: BaseDataElement) -> BaseDataElement:
-        """Apply transforms to a single data element."""
-        if self.transforms is None:
-            raise ValueError("Transforms have not been prepared. Call prepare_data() first.")
-        return self.transforms(data_element)
-
-    def get_batch(self) -> List[BaseDataElement]:
-        """Get a batch of data elements from the dataloader."""
+    def get_batch(self) -> Any:
         if self.dataloader is None:
-            raise ValueError("Dataloader has not been prepared. Call prepare_data() first.")
+            self.prepare_data()
         return next(iter(self.dataloader))
 
-    @abstractmethod
-    def collate_fn(self, batch: List[BaseDataElement]) -> Any:
-        """Collate function for the dataloader. This method should be implemented
-        by subclasses to handle domain-specific collation."""
-        pass
+    def get_subset(self, indices: Union[int, List[int]]) -> 'DataManager':
+        new_manager = self.__class__(
+            dataset_configs=self.dataset_configs,
+            dataloader_config=self.dataloader_config,
+            transform_configs=self.transform_configs,
+            dataset_wrapper=self.dataset_wrapper,
+            sampler_config=self.sampler_config,
+            lazy_init=True,
+            serialize_data=self.serialize_data
+        )
+        new_manager.datasets = [dataset.get_subset(indices) for dataset in self.datasets]
+        new_manager.prepare_data()
+        return new_manager
 
     @abstractmethod
-    def process_batch(self, batch: Any) -> Any:
-        """Process a batch of data elements. This method should be implemented
-        by subclasses to handle domain-specific processing."""
+    def collate_fn(self, batch: List[Union[BaseDataElement, Dict[str, Any]]]) -> Any:
         pass
 
     def __iter__(self):
         if self.dataloader is None:
-            raise ValueError("Dataloader has not been prepared. Call prepare_data() first.")
+            self.prepare_data()
         return iter(self.dataloader)
 
     def __len__(self):
         if self.dataloader is None:
-            raise ValueError("Dataloader has not been prepared. Call prepare_data() first.")
+            self.prepare_data()
         return len(self.dataloader)
-

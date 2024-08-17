@@ -1,4 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Type, Union
+from contextlib import contextmanager
+from mmengine.logging import print_log
 from mmengine.registry import (
     build_from_cfg, build_runner_from_cfg, build_model_from_cfg, build_scheduler_from_cfg,
     MODELS, RUNNERS, RUNNER_CONSTRUCTORS, LOOPS, HOOKS, STRATEGIES, DATASETS, DATA_SAMPLERS,
@@ -8,6 +10,7 @@ from mmengine.registry import (
     Registry, init_default_scope, DefaultScope
 )
 from mmengine.registry import count_registered_modules, traverse_registry_tree
+import torch.nn as nn
 
 class RegistryManager:
     def __init__(self):
@@ -38,91 +41,133 @@ class RegistryManager:
         }
 
     def get_registry(self, name: str) -> Registry:
+        """Get a registry by name."""
+        try:
+            return self.registry_dict[name]
+        except KeyError:
+            print_log(f"Registry '{name}' not found.", level='ERROR')
+            raise
+
+    def create_registry(self, name: str, parent: Optional[str] = None, build_func: Optional[Callable] = None, 
+                        scope: Optional[str] = None, locations: Optional[List[str]] = None) -> Registry:
+        """Create a new registry or return existing one."""
+        if name not in self.registry_dict:
+            parent_registry = self.get_registry(parent) if parent else None
+            self.registry_dict[name] = Registry(name, build_func=build_func, parent=parent_registry, 
+                                                scope=scope, locations=locations)
         return self.registry_dict[name]
 
+    def remove_registry(self, name: str) -> None:
+        """Remove a registry by name."""
+        if name in self.registry_dict:
+            del self.registry_dict[name]
+        else:
+            print_log(f"Registry '{name}' not found, cannot remove.", level='WARNING')
+
+    def list_registries(self) -> List[str]:
+        """List all registered registries."""
+        return list(self.registry_dict.keys())
+
+    def clear_registries(self) -> None:
+        """Clear all registries."""
+        self.registry_dict.clear()
+        print_log("All registries have been cleared.", level='INFO')
+
     def build(self, cfg: Dict[str, Any], registry_name: str, *args: Any, **kwargs: Any) -> Any:
+        """Build an instance from config dict."""
         registry = self.get_registry(registry_name)
+        if '_scope_' in cfg:
+            with self.switch_scope_and_registry(cfg['_scope_']):
+                return registry.build(cfg, *args, **kwargs)
         return registry.build(cfg, *args, **kwargs)
 
     def build_from_cfg(self, cfg: Dict[str, Any], registry: Registry, default_args: Optional[Dict[str, Any]] = None) -> Any:
+        """Build a module from config dict."""
         return build_from_cfg(cfg, registry, default_args)
 
     def build_runner(self, cfg: Dict[str, Any]) -> Any:
+        """Build a runner from config dict."""
         return build_runner_from_cfg(cfg, RUNNERS)
 
     def build_model(self, cfg: Union[Dict[str, Any], List[Dict[str, Any]]], default_args: Optional[Dict[str, Any]] = None) -> Any:
+        """Build a model from config dict or list of config dicts."""
+        if isinstance(cfg, list):
+            return nn.Sequential(*[build_model_from_cfg(c, MODELS, default_args) for c in cfg])
         return build_model_from_cfg(cfg, MODELS, default_args)
 
     def build_scheduler(self, cfg: Dict[str, Any], default_args: Optional[Dict[str, Any]] = None) -> Any:
+        """Build a parameter scheduler from config dict."""
         return build_scheduler_from_cfg(cfg, PARAM_SCHEDULERS, default_args)
 
     def register_module(self, registry_name: str, name: Optional[str] = None, 
                         force: bool = False, module: Optional[Union[Type, Callable]] = None) -> Callable:
+        """Register a module."""
         registry = self.get_registry(registry_name)
         return registry.register_module(name=name, force=force, module=module)
 
     def init_default_scope(self, scope: str) -> None:
+        """Initialize the default scope."""
         init_default_scope(scope)
+        print_log(f"Default scope initialized to '{scope}'", level='INFO')
 
     def get_current_scope(self) -> Optional[str]:
+        """Get the current default scope."""
         return DefaultScope.get_current_instance().scope_name if DefaultScope.get_current_instance() else None
 
+    def overwrite_default_scope(self, scope: str) -> None:
+        """Overwrite the default scope."""
+        DefaultScope.overwrite_default_scope(scope)
+        print_log(f"Default scope overwritten to '{scope}'", level='INFO')
+
     def count_registered_modules(self, save_path: Optional[str] = None, verbose: bool = False) -> Dict[str, Any]:
+        """Count registered modules."""
         return count_registered_modules(save_path, verbose)
 
     def traverse_registry_tree(self, registry_name: str, verbose: bool = False) -> List[Dict[str, Any]]:
+        """Traverse the registry tree."""
         registry = self.get_registry(registry_name)
         return traverse_registry_tree(registry, verbose)
 
-"""
-# Usage example
-registry_manager = RegistryManager()
+    @contextmanager
+    def switch_scope_and_registry(self, scope: str):
+        """Temporarily switch the default scope."""
+        original_scope = self.get_current_scope()
+        self.init_default_scope(scope)
+        try:
+            yield
+        finally:
+            self.init_default_scope(original_scope)
 
-# Initialize default scope
-registry_manager.init_default_scope('myproject')
+    def switch_scope_and_registry_method(self, scope: str) -> Registry:
+        """Switch the default scope and return the corresponding registry."""
+        original_scope = self.get_current_scope()
+        self.init_default_scope(scope)
+        return self.get_registry(scope)
 
-# Register a model
-@MODELS
-class MyModel:
-    def __init__(self, param1: int, param2: str):
-        self.param1 = param1
-        self.param2 = param2
+    def import_from_location(self, registry_name: str) -> None:
+        """Import modules from predefined locations for a registry."""
+        registry = self.get_registry(registry_name)
+        registry.import_from_location()
 
-    def __repr__(self):
-        return f"MyModel(param1={self.param1}, param2='{self.param2}')"
+    def split_scope_key(self, registry_name: str, key: str) -> tuple:
+        """Split scope and key."""
+        registry = self.get_registry(registry_name)
+        return registry.split_scope_key(key)
 
-# Build a model
-model_cfg = {"type": "MyModel", "param1": 42, "param2": "hello"}
-model = registry_manager.build(model_cfg, 'MODELS')
-print(model)  # Output: MyModel(param1=42, param2='hello')
+    def get(self, registry_name: str, key: str) -> Any:
+        """Get an item from a registry."""
+        registry = self.get_registry(registry_name)
+        return registry.get(key)
 
-# Register and build a runner
-@RUNNERS
-class MyRunner:
-    def __init__(self, model, optimizer):
-        self.model = model
-        self.optimizer = optimizer
+    def infer_scope(self, registry_name: str) -> str:
+        """Infer the scope of a registry."""
+        registry = self.get_registry(registry_name)
+        return registry.infer_scope()
 
-    def run(self):
-        print(f"Running with {self.model}")
-
-runner_cfg = {
-    "type": "MyRunner",
-    "model": model_cfg,
-    "optimizer": {"type": "SGD", "lr": 0.01}
-}
-runner = registry_manager.build_runner(runner_cfg)
-
-
-# Count registered modules
-stats = registry_manager.count_registered_modules(verbose=True)
-print(stats)
-
-# Traverse registry tree
-tree = registry_manager.traverse_registry_tree('MODELS', verbose=True)
-print(tree)
-
-# Get current scope
-current_scope = registry_manager.get_current_scope()
-print(f"Current scope: {current_scope}")
-"""
+    def add_registry(self, name: str, registry: Registry) -> None:
+        """Add a new registry dynamically."""
+        if name in self.registry_dict:
+            print_log(f"Registry '{name}' already exists. Use force=True to overwrite.", level='WARNING')
+        else:
+            self.registry_dict[name] = registry
+            print_log(f"Registry '{name}' added successfully.", level='INFO')

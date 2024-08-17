@@ -1,15 +1,16 @@
 import add_packages
+
 import torch
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Union, Any, Optional
 from mmengine.dataset import BaseDataset 
 from mmengine.structures import BaseDataElement
 from mmengine.registry import DATASETS
-from toolkit.mmlab.engine.bases.data import DataManager
+from toolkit.ml.mmlab.engine.bases.data import DataManager
 
 @DATASETS.register_module()
 class LinearRegressionDataset(BaseDataset):
-    def __init__(self, num_samples=1000, num_features=1, noise=0.1):
+    def __init__(self, num_samples=1000, num_features=1, noise=0.1, pipeline=None, **kwargs):
         self.num_samples = num_samples
         self.num_features = num_features
         self.noise = noise
@@ -19,39 +20,45 @@ class LinearRegressionDataset(BaseDataset):
         true_coefficients = np.random.randn(num_features)
         self.y = np.dot(self.X, true_coefficients) + np.random.randn(num_samples) * noise
         
-        # Call super().__init__() after generating the data
-        super().__init__()
+        super().__init__(
+            ann_file=None,
+            metainfo=dict(num_features=num_features),
+            data_root=None,
+            pipeline=pipeline or [],
+            **kwargs
+        )
 
     def load_data_list(self):
-        """Override this method to return a list of data samples."""
         return [
-            {
-                'features': self.X[i],
-                'target': self.y[i]
-            }
+            dict(
+                features=self.X[i],
+                target=self.y[i],
+            )
             for i in range(self.num_samples)
         ]
 
-    def __len__(self):
-        return self.num_samples
-
-    def __getitem__(self, idx):
+    def parse_data_info(self, raw_data_info):
         return BaseDataElement(
-            features=torch.FloatTensor(self.X[idx]),
-            target=torch.FloatTensor([self.y[idx]])
+            metainfo=self.metainfo,
+            features=torch.FloatTensor(raw_data_info['features']),
+            target=torch.FloatTensor([raw_data_info['target']])
         )
 
 class LinearRegressionDataManager(DataManager):
-    def collate_fn(self, batch: List[BaseDataElement]) -> Dict[str, torch.Tensor]:
-        """Collate function for linear regression data."""
+    def collate_fn(self, batch: List[Union[BaseDataElement, Dict[str, Any]]]) -> Dict[str, torch.Tensor]:
         features = []
         targets = []
         
-        for data_element in batch:
-            features.append(data_element.features)
-            targets.append(data_element.target)
+        for item in batch:
+            if isinstance(item, BaseDataElement):
+                features.append(item.features)
+                targets.append(item.target)
+            elif isinstance(item, dict):
+                features.append(torch.FloatTensor(item['features']))
+                targets.append(torch.FloatTensor([item['target']]))
+            else:
+                raise TypeError(f"Unexpected type in batch: {type(item)}")
         
-        # Stack features and targets into tensors
         feature_tensor = torch.stack(features)
         target_tensor = torch.cat(targets)
         
@@ -59,11 +66,6 @@ class LinearRegressionDataManager(DataManager):
             'features': feature_tensor,
             'targets': target_tensor
         }
-
-    def process_batch(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Process a batch of data for linear regression."""
-        # In this simple example, we just return the batch as-is
-        return batch
 
 # Configuration for the dataset
 dataset_config = {
@@ -81,7 +83,7 @@ dataloader_config = {
 
 # Create the data manager
 linear_regression_dm = LinearRegressionDataManager(
-    dataset_configs=dataset_config,
+    dataset_configs=[dataset_config],
     dataloader_config=dataloader_config
 )
 
@@ -98,4 +100,4 @@ for batch in linear_regression_dm:
 single_batch = linear_regression_dm.get_batch()
 print(f"Single batch features shape: {single_batch['features'].shape}")
 
-# TODO: Write Pytest
+# TODO: Write PytestPda
