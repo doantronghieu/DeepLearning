@@ -12,3 +12,4 @@ Apps/.env
 Apps/.vscode
 
 .aider*
+**/extracted_files.txt
