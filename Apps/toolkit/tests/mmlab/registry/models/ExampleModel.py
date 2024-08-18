@@ -1,4 +1,3 @@
-# mmlab/tests/test_example_model.py
 import add_packages
         
 import pytest
@@ -8,6 +7,7 @@ from toolkit.ml.mmlab.engine.bases.model import MyBaseModel
 from mmengine.optim import OptimWrapper
 from torch.optim import SGD
 from argparse import ArgumentParser
+from torch.nn.parallel import DistributedDataParallel
 
 class ExampleModel(MyBaseModel):
     def __init__(self, num_classes=10, init_cfg=None, data_preprocessor=None):
@@ -121,5 +121,14 @@ def test_sync_batchnorm(example_model: MyBaseModel):
     reverted_bn = example_model.revert_sync_batchnorm(sync_bn)
     assert isinstance(reverted_bn, nn.BatchNorm2d)
 
-    
+def test_bias_init_with_prob(example_model: MyBaseModel):
+    bias_init = example_model.bias_init_with_prob(0.01)
+    assert isinstance(bias_init, float)
+
+def test_detect_anomalous_params(example_model: MyBaseModel):
+    # Introduce an anomalous parameter
+    example_model.fc.weight.data[0, 0] = float('inf')
+    anomalous_params = example_model.detect_anomalous_params(example_model)
+    assert 'fc.weight' in anomalous_params
+
 # pytest ExampleModel.py

@@ -1,9 +1,11 @@
 # ml/mmlab/engine/bases/model.py
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Union, Tuple, List
 
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.nn.parallel import DistributedDataParallel
 from mmengine.model import BaseModel
 from mmengine.optim import OptimWrapper
@@ -120,3 +122,18 @@ class MyBaseModel(BaseModel, ABC):
     def convert_sync_batchnorm(module):
         return nn.SyncBatchNorm(module.num_features, module.eps, module.momentum,
                                 module.affine, module.track_running_stats)
+
+    @staticmethod
+    def bias_init_with_prob(prior_prob: float) -> float:
+        """Initialize conv/fc bias value according to a given probability value."""
+        bias_init = float(-np.log((1 - prior_prob) / prior_prob))
+        return bias_init
+
+    @staticmethod
+    def detect_anomalous_params(model: nn.Module) -> List[str]:
+        """Detect anomalous parameters in the model."""
+        anomalous_params = []
+        for name, param in model.named_parameters():
+            if torch.isnan(param.data).any() or torch.isinf(param.data).any():
+                anomalous_params.append(name)
+        return anomalous_params
