@@ -1,4 +1,3 @@
-# My code base 1
 # My code starts from here
 # Standard library imports
 import copy
