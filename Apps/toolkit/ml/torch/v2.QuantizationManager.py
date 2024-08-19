@@ -366,7 +366,7 @@ class QuantizationWorkflow:
         self.model = PT2EQuantizationService.capture_graph(self.model, example_inputs)
         self.model = PT2EQuantizationService.prepare_pt2e(self.model, self.quantizer)
 
-    def convert_pt2e(self):
+def convert_pt2e(self):
         self.model = PT2EQuantizationService.convert_pt2e(self.model)
 
 class QuantizationController:
@@ -410,6 +410,7 @@ class PT2EQuantizationController:
         return quantized_model
 
 # Cross-cutting concern classes
+
 class QuantizationConfig:
     """
     Configuration class for quantization settings.
