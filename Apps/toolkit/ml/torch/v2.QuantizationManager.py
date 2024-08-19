@@ -366,7 +366,7 @@ class QuantizationWorkflow:
         self.model = PT2EQuantizationService.capture_graph(self.model, example_inputs)
         self.model = PT2EQuantizationService.prepare_pt2e(self.model, self.quantizer)
 
-def convert_pt2e(self):
+    def convert_pt2e(self):
         self.model = PT2EQuantizationService.convert_pt2e(self.model)
 
 class QuantizationController:
@@ -487,3 +487,50 @@ class QuantizationValidator:
         # Additional checks can be added here
 
         return True
+
+class QuantizationLogger:
+    """
+    Logger for quantization process and results.
+    """
+    @staticmethod
+    def log_quantization_step(step: str, details: Dict[str, Any]):
+        print(f"Quantization Step: {step}")
+        for key, value in details.items():
+            print(f"  {key}: {value}")
+        print("------------------------")
+
+class QuantizationOptimizer:
+    """
+    Optimizer for finding the best quantization configuration.
+    """
+    @staticmethod
+    def optimize_quantization(model: nn.Module, data_loader: DataLoader, 
+                              backends: List[QuantizerBackend], 
+                              dtypes: List[torch.dtype]) -> QuantizationConfig:
+        best_config = None
+        best_accuracy = 0.0
+
+        for backend in backends:
+            for dtype in dtypes:
+                config = QuantizationConfig(backend, dtype, torch.per_tensor_affine)
+                if QuantizationValidator.validate_quantization_config(config, model):
+                    workflow = QuantizationWorkflow(model, backend)
+                    workflow.prepare_static()
+                    workflow.calibrate(data_loader)
+                    workflow.convert()
+                    
+                    results = QuantizationProfiler.profile_model(workflow.model, data_loader)
+                    
+                    if results["accuracy"] > best_accuracy:
+                        best_accuracy = results["accuracy"]
+                        best_config = config
+                    
+                    QuantizationLogger.log_quantization_step("Optimization", {
+                        "backend": backend,
+                        "dtype": dtype,
+                        "accuracy": results["accuracy"],
+                        "latency": results["average_latency_ms"]
+                    })
+
+        return best_config
+
