@@ -1,3 +1,4 @@
+# Original design
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -106,6 +107,27 @@ class QuantizedModel(nn.Module):
         x = self.model(x)
         x = self.dequant(x)
         return x
+
+class BackendConfig:
+    """
+    Represents a configuration for a specific backend.
+    """
+    def __init__(self, name: str, supported_ops: List[str], dtype_configs: Dict[str, Any]):
+        self.name = name
+        self.supported_ops = supported_ops
+        self.dtype_configs = dtype_configs
+
+    def is_op_supported(self, op_name: str) -> bool:
+        """
+        Check if an operation is supported by this backend.
+        """
+        return op_name in self.supported_ops
+
+    def get_dtype_config(self, dtype: str) -> Any:
+        """
+        Get the configuration for a specific data type.
+        """
+        return self.dtype_configs.get(dtype)
 
 # Service classes
 
@@ -237,6 +259,44 @@ class Quantizer(nn.Module):
         super().__init__()
         self.backend = backend
         self.qconfig = QuantizationService.get_default_qconfig(backend.value)
+        self.backend_config = self._get_backend_config()
+
+    def _get_backend_config(self) -> BackendConfig:
+        """
+        Get the appropriate BackendConfig based on the selected backend.
+        """
+        if self.backend == QuantizerBackend.FBGEMM:
+            return self._get_fbgemm_backend_config()
+        elif self.backend == QuantizerBackend.QNNPACK:
+            return self._get_qnnpack_backend_config()
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
+
+    def _get_fbgemm_backend_config(self) -> BackendConfig:
+        """
+        Get the BackendConfig for FBGEMM.
+        """
+        return BackendConfig(
+            name="FBGEMM",
+            supported_ops=["linear", "conv2d", "relu"],
+            dtype_configs={
+                "quint8": {"min_value": 0, "max_value": 255},
+                "qint8": {"min_value": -128, "max_value": 127}
+            }
+        )
+
+    def _get_qnnpack_backend_config(self) -> BackendConfig:
+        """
+        Get the BackendConfig for QNNPACK.
+        """
+        return BackendConfig(
+            name="QNNPACK",
+            supported_ops=["linear", "conv2d", "relu", "add"],
+            dtype_configs={
+                "quint8": {"min_value": 0, "max_value": 255},
+                "qint8": {"min_value": -128, "max_value": 127}
+            }
+        )
 
     def set_global(self, qconfig: QConfig):
         self.qconfig = qconfig
@@ -246,6 +306,18 @@ class Quantizer(nn.Module):
 
     def convert(self, model: nn.Module) -> nn.Module:
         return QuantizationService.convert(model)
+
+    def is_op_supported(self, op_name: str) -> bool:
+        """
+        Check if an operation is supported by the current backend.
+        """
+        return self.backend_config.is_op_supported(op_name)
+
+    def get_dtype_config(self, dtype: str) -> Any:
+        """
+        Get the configuration for a specific data type.
+        """
+        return self.backend_config.get_dtype_config(dtype)
 
 class QuantizerFactory:
     """
@@ -336,3 +408,81 @@ class PT2EQuantizationController:
         ModelCalibrationService.calibrate(prepared_model, calibration_data)
         quantized_model = PT2EQuantizationService.convert_pt2e(prepared_model)
         return quantized_model
+
+# Cross-cutting concern classes
+class QuantizationConfig:
+    """
+    Configuration class for quantization settings.
+    """
+    def __init__(self, backend: QuantizerBackend, dtype: torch.dtype, qscheme: torch.qscheme):
+        self.backend = backend
+        self.dtype = dtype
+        self.qscheme = qscheme
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "backend": self.backend.value,
+            "dtype": str(self.dtype),
+            "qscheme": str(self.qscheme)
+        }
+
+# Additional utility classes
+
+class QuantizationProfiler:
+    """
+    Profiler for quantization performance and accuracy metrics.
+    """
+    @staticmethod
+    def profile_model(model: nn.Module, test_data: DataLoader) -> Dict[str, float]:
+        model.eval()
+        total_latency = 0.0
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for inputs, targets in test_data:
+                start_time = torch.cuda.Event(enable_timing=True)
+                end_time = torch.cuda.Event(enable_timing=True)
+                
+                start_time.record()
+                outputs = model(inputs)
+                end_time.record()
+                
+                torch.cuda.synchronize()
+                total_latency += start_time.elapsed_time(end_time)
+
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+
+        accuracy = 100.0 * correct / total
+        average_latency = total_latency / len(test_data)
+
+        return {
+            "accuracy": accuracy,
+            "average_latency_ms": average_latency
+        }
+
+class QuantizationValidator:
+    """
+    Validator for checking quantization constraints and requirements.
+    """
+    @staticmethod
+    def validate_quantization_config(config: QuantizationConfig, model: nn.Module) -> bool:
+        # Check if the backend supports all operations in the model
+        quantizer = QuantizerFactory.create_quantizer(config.backend)
+        for name, module in model.named_modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear, nn.ReLU)):
+                if not quantizer.is_op_supported(type(module).__name__.lower()):
+                    print(f"Unsupported operation: {name} ({type(module).__name__})")
+                    return False
+
+        # Check if the dtype is supported by the backend
+        dtype_config = quantizer.get_dtype_config(str(config.dtype))
+        if dtype_config is None:
+            print(f"Unsupported dtype: {config.dtype}")
+            return False
+
+        # Additional checks can be added here
+
+        return True

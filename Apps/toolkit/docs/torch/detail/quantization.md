@@ -1,6 +1,6 @@
 # Quantization
 
-## ✅ [Introduction to Quantization on PyTorch](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/)
+## [Introduction to Quantization on PyTorch](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/)
 
 *Authors: Raghuraman Krishnamoorthi, James Reed, Min Ni, Chris Gottbrath, and Seth Weidman*
 
@@ -182,7 +182,7 @@ If you run into issues you can get community help by posting in at discuss.pytor
 
 This post is authored by Raghuraman Krishnamoorthi, James Reed, Min Ni, Chris Gottbrath and Seth Weidman. Special thanks to Jianyu Huang, Lingyi Liu and Haixin Liu for producing quantization metrics included in this post.
 
-## ✅ [API-Quantization](https://pytorch.org/docs/stable/quantization.html#torch.quantization.quantize_dynamic)
+## [API-Quantization](https://pytorch.org/docs/stable/quantization.html#torch.quantization.quantize_dynamic)
 
 ### Warning
 
@@ -497,1519 +497,6 @@ When calling torch.load on a quantized model, if you see an error like: Attribut
 ### Symbolic Trace Error when using FX Graph Mode Quantization
 
 Symbolic traceability is a requirement for (Prototype - maintenance mode) FX Graph Mode Quantization, so if you pass a PyTorch Model that is not symbolically traceable to torch.ao.quantization.prepare\_fx or torch.ao.quantization.prepare\_qat\_fx, we might see an error like the following: torch.fx.proxy.TraceError: symbolically traced variables cannot be used as inputs to control flow Please take a look at Limitations of Symbolic Tracing and use - User Guide on Using FX Graph Mode Quantization to workaround the problem.
-
-## ✅ [Dynamic Quantization](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html)
-
-In this recipe, you will learn how to leverage Dynamic Quantization to accelerate inference on an LSTM-style recurrent neural network. This technique reduces the size of the model weights and speeds up model execution.
-
-### Introduction
-
-When designing neural networks, there are various trade-offs to consider. During model development and training, you can adjust the number of layers and parameters in a recurrent neural network, trading off accuracy against model size and/or latency or throughput. Quantization provides a way to make a similar trade-off between performance and model accuracy after training is completed.
-
-With dynamic quantization, you can significantly reduce your model size and potentially achieve a significant latency reduction without losing much accuracy. This technique allows you to test the trade-off between performance and model accuracy in a single session.
-
-### What is dynamic quantization?
-
-Quantizing a network means converting it to use a reduced precision integer representation for the weights and/or activations. This saves on model size and allows the use of higher throughput math operations on your CPU or GPU.
-
-Dynamic quantization determines the scale factor for activations dynamically based on the data range observed at runtime. This ensures that the scale factor is "tuned" so that as much signal as possible about each observed dataset is preserved. The model parameters, on the other hand, are converted ahead of time and stored in INT8 form.
-
-Arithmetic in the quantized model is done using vectorized INT8 instructions. Accumulation is typically done with INT16 or INT32 to avoid overflow. This higher precision value is scaled back to INT8 if the next layer is quantized or converted to FP32 for output.
-
-Dynamic quantization is relatively free of tuning parameters, which makes it well-suited to be added into production pipelines as a standard part of converting LSTM models to deployment.
-
-**Note:**
-
-Limitations of the approach taken here:
-
-- This recipe provides a quick introduction to the dynamic quantization features in PyTorch and the workflow for using it.
-- The focus is on explaining the specific functions used to convert the model.
-- Several significant simplifications are made in the interest of brevity and clarity.
-- The network used is a minimal LSTM network.
-- The network is initialized with a random hidden state.
-- The network is tested with random inputs.
-- The network is not trained in this tutorial.
-- The output values of the quantized network are generally in the same ballpark as the output of the FP32 network, but the expected accuracy loss on a real trained network is not demonstrated here.
-
-### Steps
-
-This recipe has 5 steps.
-
-#### 1: Set Up
-
-This is a straightforward bit of code to set up for the rest of the recipe.
-
-The unique module we are importing here is `torch.quantization`, which includes PyTorch’s quantized operators and conversion functions. We also define a very simple LSTM model and set up some inputs.
-
-```python
-# import the modules used here in this recipe
-import torch
-import torch.quantization
-import torch.nn as nn
-import copy
-import os
-import time
-
-# define a very, very simple LSTM for demonstration purposes
-# in this case, we are wrapping ``nn.LSTM``, one layer, no preprocessing or postprocessing
-# inspired by
-# `Sequence Models and Long Short-Term Memory Networks tutorial <https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html>`_, by Robert Guthrie
-# and `Dynamic Quanitzation tutorial <https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html>`__.
-class lstm_for_demonstration(nn.Module):
-  """Elementary Long Short Term Memory style model which simply wraps ``nn.LSTM``
-     Not to be used for anything other than demonstration.
-  """
-  def __init__(self,in_dim,out_dim,depth):
-     super(lstm_for_demonstration,self).__init__()
-     self.lstm = nn.LSTM(in_dim,out_dim,depth)
-
-  def forward(self,inputs,hidden):
-     out,hidden = self.lstm(inputs,hidden)
-     return out, hidden
-
-torch.manual_seed(29592)  # set the seed for reproducibility
-
-# shape parameters
-model_dimension = 8
-sequence_length = 20
-batch_size = 1
-lstm_depth = 1
-
-# random data for input
-inputs = torch.randn(sequence_length, batch_size, model_dimension)
-# hidden is actually is a tuple of the initial hidden state and the initial cell state
-hidden = (torch.randn(lstm_depth, batch_size, model_dimension), torch.randn(lstm_depth, batch_size, model_dimension))
-```
-
-#### 2: Do the Quantization
-
-Now we get to the fun part. First, we create an instance of the model called `float_lstm`, then we are going to quantize it. We’re going to use the `torch.quantization.quantize_dynamic` function, which takes the model, then a list of the submodules which we want to have quantized if they appear, then the datatype we are targeting. This function returns a quantized version of the original model as a new module.
-
-```python
-# here is our floating point instance
-float_lstm = lstm_for_demonstration(model_dimension, model_dimension, lstm_depth)
-
-# this is the call that does the work
-quantized_lstm = torch.quantization.quantize_dynamic(
-    float_lstm, {nn.LSTM, nn.Linear}, dtype=torch.qint8
-)
-
-# show the changes that were made
-print('Here is the floating point version of this module:')
-print(float_lstm)
-print('')
-print('and now the quantized version:')
-print(quantized_lstm)
-```
-
-#### 3: Look at Model Size
-
-We’ve quantized the model. What does that get us? Well, the first benefit is that we’ve replaced the FP32 model parameters with INT8 values (and some recorded scale factors). This means about 75% less data to store and move around. With the default values, the reduction shown below will be less than 75% but if you increase the model size above (for example, you can set model dimension to something like 80), this will converge towards 4x smaller as the stored model size is dominated more and more by the parameter values.
-
-```python
-def print_size_of_model(model, label=""):
-    torch.save(model.state_dict(), "temp.p")
-    size = os.path.getsize("temp.p")
-    print("model: ", label, '\t', 'Size (KB):', size/1e3)
-    os.remove('temp.p')
-    return size
-
-# compare the sizes
-f = print_size_of_model(float_lstm, "fp32")
-q = print_size_of_model(quantized_lstm, "int8")
-print("{0:.2f} times smaller".format(f/q))
-```
-
-#### 4: Look at Latency
-
-The second benefit is that the quantized model will typically run faster. This is due to a combination of effects including at least:
-
-- Less time spent moving parameter data in
-- Faster INT8 operations
-
-As you will see, the quantized version of this super-simple network runs faster. This will generally be true of more complex networks, but as they say, "your mileage may vary" depending on a number of factors including the structure of the model and the hardware you are running on.
-
-```python
-# compare the performance
-print("Floating point FP32")
-%timeit float_lstm.forward(inputs, hidden)
-print("Quantized INT8")
-%timeit quantized_lstm.forward(inputs, hidden)
-```
-
-#### 5: Look at Accuracy
-
-We are not going to do a careful look at accuracy here because we are working with a randomly initialized network rather than a properly trained one. However, I think it is worth quickly showing that the quantized network does produce output tensors that are "in the same ballpark" as the original one.
-
-For a more detailed analysis, please see the more advanced tutorials referenced at the end of this recipe.
-
-```python
-# run the float model
-out1, hidden1 = float_lstm(inputs, hidden)
-mag1 = torch.mean(abs(out1)).item()
-print('mean absolute value of output tensor values in the FP32 model is {0:.5f} '.format(mag1))
-
-# run the quantized model
-out2, hidden2 = quantized_lstm(inputs, hidden)
-mag2 = torch.mean(abs(out2)).item()
-print('mean absolute value of output tensor values in the INT8 model is {0:.5f}'.format(mag2))
-
-# compare them
-mag3 = torch.mean(abs(out1-out2)).item()
-print('mean absolute value of the difference between the output tensors is {0:.5f} or {1:.2f} percent'.format(mag3, mag3/mag1*100))
-```
-
-## ✅ [Dynamic Quantization on an LSTM Word Language Model](https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html)
-
-### Introduction
-
-Quantization involves converting the weights and activations of your model from float to int, which can result in smaller model size and faster inference with only a small hit to accuracy.
-
-In this tutorial, we will apply the easiest form of quantization - dynamic quantization - to an LSTM-based next word-prediction model, closely following the word language model from the PyTorch examples.
-
-### Imports
-
-```python
-import os
-from io import open
-import time
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-```
-
-### 1. Define the model
-
-Here we define the LSTM model architecture, following the model from the word language model example.
-
-```python
-class LSTMModel(nn.Module):
-    """Container module with an encoder, a recurrent module, and a decoder."""
-
-    def __init__(self, ntoken, ninp, nhid, nlayers, dropout=0.5):
-        super(LSTMModel, self).__init__()
-        self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp)
-        self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout)
-        self.decoder = nn.Linear(nhid, ntoken)
-
-        self.init_weights()
-
-        self.nhid = nhid
-        self.nlayers = nlayers
-
-    def init_weights(self):
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)
-
-    def forward(self, input, hidden):
-        emb = self.drop(self.encoder(input))
-        output, hidden = self.rnn(emb, hidden)
-        output = self.drop(output)
-        decoded = self.decoder(output)
-        return decoded, hidden
-
-    def init_hidden(self, bsz):
-        weight = next(self.parameters())
-        return (weight.new_zeros(self.nlayers, bsz, self.nhid),
-                weight.new_zeros(self.nlayers, bsz, self.nhid))
-```
-
-### 2. Load in the text data
-
-Next, we load the Wikitext-2 dataset into a Corpus, again following the preprocessing from the word language model example.
-
-```python
-class Dictionary(object):
-    def __init__(self):
-        self.word2idx = {}
-        self.idx2word = []
-
-    def add_word(self, word):
-        if word not in self.word2idx:
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-        return self.word2idx[word]
-
-    def __len__(self):
-        return len(self.idx2word)
-
-class Corpus(object):
-    def __init__(self, path):
-        self.dictionary = Dictionary()
-        self.train = self.tokenize(os.path.join(path, 'train.txt'))
-        self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
-        self.test = self.tokenize(os.path.join(path, 'test.txt'))
-
-    def tokenize(self, path):
-        """Tokenizes a text file."""
-        assert os.path.exists(path)
-        # Add words to the dictionary
-        with open(path, 'r', encoding="utf8") as f:
-            for line in f:
-                words = line.split() + ['<eos>']
-                for word in words:
-                    self.dictionary.add_word(word)
-
-        # Tokenize file content
-        with open(path, 'r', encoding="utf8") as f:
-            idss = []
-            for line in f:
-                words = line.split() + ['<eos>']
-                ids = []
-                for word in words:
-                    ids.append(self.dictionary.word2idx[word])
-                idss.append(torch.tensor(ids).type(torch.int64))
-            ids = torch.cat(idss)
-
-        return ids
-
-model_data_filepath = 'data/'
-
-corpus = Corpus(model_data_filepath + 'wikitext-2')
-```
-
-### 3. Load the pretrained model
-
-This is a tutorial on dynamic quantization, a quantization technique that is applied after a model has been trained. Therefore, we’ll simply load some pretrained weights into this model architecture; these weights were obtained by training for five epochs using the default settings in the word language model example.
-
-```python
-ntokens = len(corpus.dictionary)
-
-model = LSTMModel(
-    ntoken = ntokens,
-    ninp = 512,
-    nhid = 256,
-    nlayers = 5,
-)
-
-model.load_state_dict(
-    torch.load(
-        model_data_filepath + 'word_language_model_quantize.pth',
-        map_location=torch.device('cpu')
-        )
-    )
-
-model.eval()
-print(model)
-```
-
-Now let’s generate some text to ensure that the pretrained model is working properly - similarly to before, we follow here
-
-```python
-input_ = torch.randint(ntokens, (1, 1), dtype=torch.long)
-hidden = model.init_hidden(1)
-temperature = 1.0
-num_words = 1000
-
-with open(model_data_filepath + 'out.txt', 'w') as outf:
-    with torch.no_grad():  # no tracking history
-        for i in range(num_words):
-            output, hidden = model(input_, hidden)
-            word_weights = output.squeeze().div(temperature).exp().cpu()
-            word_idx = torch.multinomial(word_weights, 1)[0]
-            input_.fill_(word_idx)
-
-            word = corpus.dictionary.idx2word[word_idx]
-
-            outf.write(str(word.encode('utf-8')) + ('\n' if i % 20 == 19 else ' '))
-
-            if i % 100 == 0:
-                print('| Generated {}/{} words'.format(i, 1000))
-
-with open(model_data_filepath + 'out.txt', 'r') as outf:
-    all_output = outf.read()
-    print(all_output)
-```
-
-It’s no GPT-2, but it looks like the model has started to learn the structure of language!
-
-### 4. Test dynamic quantization
-
-Finally, we can call torch.quantization.quantize_dynamic on the model! Specifically,
-
-- We specify that we want the nn.LSTM and nn.Linear modules in our model to be quantized
-- We specify that we want weights to be converted to int8 values
-
-```python
-import torch.quantization
-
-quantized_model = torch.quantization.quantize_dynamic(
-    model, {nn.LSTM, nn.Linear}, dtype=torch.qint8
-)
-print(quantized_model)
-```
-
-The model looks the same; how has this benefited us? First, we see a significant reduction in model size:
-
-```python
-def print_size_of_model(model):
-    torch.save(model.state_dict(), "temp.p")
-    print('Size (MB):', os.path.getsize("temp.p")/1e6)
-    os.remove('temp.p')
-
-print_size_of_model(model)
-print_size_of_model(quantized_model)
-```
-
-Second, we see faster inference time, with no difference in evaluation loss:
-
-Note: we set the number of threads to one for single threaded comparison, since quantized models run single threaded.
-
-```python
-torch.set_num_threads(1)
-
-def time_model_evaluation(model, test_data):
-    s = time.time()
-    loss = evaluate(model, test_data)
-    elapsed = time.time() - s
-    print('''loss: {0:.3f}\nelapsed time (seconds): {1:.1f}'''.format(loss, elapsed))
-
-time_model_evaluation(model, test_data)
-time_model_evaluation(quantized_model, test_data)
-```
-
-## ✅ [Dynamic Quantization on BERT](https://pytorch.org/tutorials/intermediate/dynamic_quantization_bert_tutorial.html)
-
-### Introduction
-
-In this tutorial, we will apply the dynamic quantization on a BERT model, closely following the BERT model from the HuggingFace Transformers examples. With this step-by-step journey, we would like to demonstrate how to convert a well-known state-of-the-art model like BERT into dynamic quantized model.
-
-BERT, or Bidirectional Embedding Representations from Transformers, is a new method of pre-training language representations which achieves the state-of-the-art accuracy results on many popular Natural Language Processing (NLP) tasks, such as question answering, text classification, and others. The original paper can be found [here](https://arxiv.org/abs/1810.04805).
-
-Dynamic quantization support in PyTorch converts a float model to a quantized model with static int8 or float16 data types for the weights and dynamic quantization for the activations. The activations are quantized dynamically (per batch) to int8 when the weights are quantized to int8. In PyTorch, we have torch.quantization.quantize_dynamic API, which replaces specified modules with dynamic weight-only quantized versions and output the quantized model.
-
-We demonstrate the accuracy and inference performance results on the Microsoft Research Paraphrase Corpus (MRPC) task in the General Language Understanding Evaluation benchmark (GLUE). The MRPC (Dolan and Brockett, 2005) is a corpus of sentence pairs automatically extracted from online news sources, with human annotations of whether the sentences in the pair are semantically equivalent. As the classes are imbalanced (68% positive, 32% negative), we follow the common practice and report F1 score. MRPC is a common NLP task for language pair classification, as shown below.
-
-### 1. Setup
-
-#### 1.1 Install PyTorch and HuggingFace Transformers
-
-To start this tutorial, let’s first follow the installation instructions in PyTorch [here](https://pytorch.org/get-started/locally/) and HuggingFace Github Repo [here](https://github.com/huggingface/transformers). In addition, we also install scikit-learn package, as we will reuse its built-in F1 score calculation helper function.
-
-```bash
-pip install sklearn
-pip install transformers==4.29.2
-```
-
-#### 1.2 Import the necessary modules
-
-In this step we import the necessary Python modules for the tutorial.
-
-```python
-import logging
-import numpy as np
-import os
-import random
-import sys
-import time
-import torch
-
-from argparse import Namespace
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
-from tqdm import tqdm
-from transformers import (BertConfig, BertForSequenceClassification, BertTokenizer,)
-from transformers import glue_compute_metrics as compute_metrics
-from transformers import glue_output_modes as output_modes
-from transformers import glue_processors as processors
-from transformers import glue_convert_examples_to_features as convert_examples_to_features
-
-# Setup logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.WARN)
-
-logging.getLogger("transformers.modeling_utils").setLevel(
-   logging.WARN)  # Reduce logging
-
-print(torch.__version__)
-```
-
-We set the number of threads to compare the single thread performance between FP32 and INT8 performance. In the end of the tutorial, the user can set other number of threads by building PyTorch with right parallel backend.
-
-```python
-torch.set_num_threads(1)
-print(torch.__config__.parallel_info())
-```
-
-#### 1.3 Learn about helper functions
-
-The helper functions are built-in in transformers library. We mainly use the following helper functions: one for converting the text examples into the feature vectors; The other one for measuring the F1 score of the predicted result.
-
-The glue_convert_examples_to_features function converts the texts into input features:
-
-- Tokenize the input sequences;
-- Insert [CLS] in the beginning;
-- Insert [SEP] between the first sentence and the second sentence, and in the end;
-- Generate token type ids to indicate whether a token belongs to the first sequence or the second sequence.
-
-The glue_compute_metrics function has the compute metrics with the F1 score, which can be interpreted as a weighted average of the precision and recall, where an F1 score reaches its best value at 1 and worst score at 0. The relative contribution of precision and recall to the F1 score are equal.
-
-The equation for the F1 score is:
-
-F1 = 2 * (precision * recall) / (precision + recall)
-
-#### 1.4 Download the dataset
-
-Before running MRPC tasks we download the GLUE data by running this script and unpack it to a directory glue_data.
-
-```bash
-python download_glue_data.py --data_dir='glue_data' --tasks='MRPC'
-```
-
-### 2. Fine-tune the BERT model
-
-The spirit of BERT is to pre-train the language representations and then to fine-tune the deep bi-directional representations on a wide range of tasks with minimal task-dependent parameters, and achieves state-of-the-art results. In this tutorial, we will focus on fine-tuning with the pre-trained BERT model to classify semantically equivalent sentence pairs on MRPC task.
-
-To fine-tune the pre-trained BERT model (bert-base-uncased model in HuggingFace transformers) for the MRPC task, you can follow the command in examples:
-
-```bash
-export GLUE_DIR=./glue_data
-export TASK_NAME=MRPC
-export OUT_DIR=./$TASK_NAME/
-python ./run_glue.py \
-    --model_type bert \
-    --model_name_or_path bert-base-uncased \
-    --task_name $TASK_NAME \
-    --do_train \
-    --do_eval \
-    --do_lower_case \
-    --data_dir $GLUE_DIR/$TASK_NAME \
-    --max_seq_length 128 \
-    --per_gpu_eval_batch_size=8   \
-    --per_gpu_train_batch_size=8   \
-    --learning_rate 2e-5 \
-    --num_train_epochs 3.0 \
-    --save_steps 100000 \
-    --output_dir $OUT_DIR
-```
-
-We provide the fined-tuned BERT model for MRPC task [here](https://download.pytorch.org/tutorial/bert_mrpc_quantization/bert_mrpc_quantization.zip). To save time, you can download the model file (~400 MB) directly into your local folder $OUT_DIR.
-
-#### 2.1 Set global configurations
-
-Here we set the global configurations for evaluating the fine-tuned BERT model before and after the dynamic quantization.
-
-```python
-configs = Namespace()
-
-# The output directory for the fine-tuned model, $OUT_DIR.
-configs.output_dir = "./MRPC/"
-
-# The data directory for the MRPC task in the GLUE benchmark, $GLUE_DIR/$TASK_NAME.
-configs.data_dir = "./glue_data/MRPC"
-
-# The model name or path for the pre-trained model.
-configs.model_name_or_path = "bert-base-uncased"
-# The maximum length of an input sequence
-configs.max_seq_length = 128
-
-# Prepare GLUE task.
-configs.task_name = "MRPC".lower()
-configs.processor = processors[configs.task_name]()
-configs.output_mode = output_modes[configs.task_name]
-configs.label_list = configs.processor.get_labels()
-configs.model_type = "bert".lower()
-configs.do_lower_case = True
-
-# Set the device, batch size, topology, and caching flags.
-configs.device = "cpu"
-configs.per_gpu_eval_batch_size = 8
-configs.n_gpu = 0
-configs.local_rank = -1
-configs.overwrite_cache = False
-
-# Set random seed for reproducibility.
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-set_seed(42)
-```
-
-#### 2.2 Load the fine-tuned BERT model
-
-We load the tokenizer and fine-tuned BERT sequence classifier model (FP32) from the configs.output_dir.
-
-```python
-tokenizer = BertTokenizer.from_pretrained(
-    configs.output_dir, do_lower_case=configs.do_lower_case)
-
-model = BertForSequenceClassification.from_pretrained(configs.output_dir)
-model.to(configs.device)
-```
-
-#### 2.3 Define the tokenize and evaluation function
-
-We reuse the tokenize and evaluation function from Huggingface.
-
-```python
-def evaluate(args, model, tokenizer, prefix=""):
-    # Loop to handle MNLI double evaluation (matched, mis-matched)
-    eval_task_names = ("mnli", "mnli-mm") if args.task_name == "mnli" else (args.task_name,)
-    eval_outputs_dirs = (args.output_dir, args.output_dir + '-MM') if args.task_name == "mnli" else (args.output_dir,)
-
-    results = {}
-    for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
-
-        if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(eval_output_dir)
-
-        args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-        # Note that DistributedSampler samples randomly
-        eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
-        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
-
-        # multi-gpu eval
-        if args.n_gpu > 1:
-            model = torch.nn.DataParallel(model)
-
-        # Eval!
-        logger.info("***** Running evaluation {} *****".format(prefix))
-        logger.info("  Num examples = %d", len(eval_dataset))
-        logger.info("  Batch size = %d", args.eval_batch_size)
-        eval_loss = 0.0
-        nb_eval_steps = 0
-        preds = None
-        out_label_ids = None
-        for batch in tqdm(eval_dataloader, desc="Evaluating"):
-            model.eval()
-            batch = tuple(t.to(args.device) for t in batch)
-
-            with torch.no_grad():
-                inputs = {'input_ids':      batch[0],
-                          'attention_mask': batch[1],
-                          'labels':         batch[3]}
-                if args.model_type != 'distilbert':
-                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
-                outputs = model(**inputs)
-                tmp_eval_loss, logits = outputs[:2]
-
-                eval_loss += tmp_eval_loss.mean().item()
-            nb_eval_steps += 1
-            if preds is None:
-                preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs['labels'].detach().cpu().numpy()
-            else:
-                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-
-        eval_loss = eval_loss / nb_eval_steps
-        if args.output_mode == "classification":
-            preds = np.argmax(preds, axis=1)
-        elif args.output_mode == "regression":
-            preds = np.squeeze(preds)
-        result = compute_metrics(eval_task, preds, out_label_ids)
-        results.update(result)
-
-        output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
-
-    return results
-
-def load_and_cache_examples(args, task, tokenizer, evaluate=False):
-    if args.local_rank not in [-1, 0] and not evaluate:
-        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-    processor = processors[task]()
-    output_mode = output_modes[task]
-    # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
-        'dev' if evaluate else 'train',
-        list(filter(None, args.model_name_or_path.split('/'))).pop(),
-        str(args.max_seq_length),
-        str(task)))
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        logger.info("Loading features from cached file %s", cached_features_file)
-        features = torch.load(cached_features_file)
-    else:
-        logger.info("Creating features from dataset file at %s", args.data_dir)
-        label_list = processor.get_labels()
-        if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
-            # HACK(label indices are swapped in RoBERTa pretrained model)
-            label_list[1], label_list[2] = label_list[2], label_list[1]
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
-        features = convert_examples_to_features(examples,
-                                                tokenizer,
-                                                label_list=label_list,
-                                                max_length=args.max_seq_length,
-                                                output_mode=output_mode,
-                                                pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
-                                                pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
-        )
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_features_file)
-            torch.save(features, cached_features_file)
-
-    if args.local_rank == 0 and not evaluate:
-        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-    # Convert to Tensors and build dataset
-    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-    if output_mode == "classification":
-        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-    elif output_mode == "regression":
-        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
-
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
-    return dataset
-```
-
-### 3. Apply the dynamic quantization
-
-We call torch.quantization.quantize_dynamic on the model to apply the dynamic quantization on the HuggingFace BERT model. Specifically,
-
-- We specify that we want the torch.nn.Linear modules in our model to be quantized;
-- We specify that we want weights to be converted to quantized int8 values.
-
-```python
-quantized_model = torch.quantization.quantize_dynamic(
-    model, {torch.nn.Linear}, dtype=torch.qint8
-)
-print(quantized_model)
-```
-
-#### 3.1 Check the model size
-
-Let’s first check the model size. We can observe a significant reduction in model size (FP32 total size: 438 MB; INT8 total size: 181 MB):
-
-```python
-def print_size_of_model(model):
-    torch.save(model.state_dict(), "temp.p")
-    print('Size (MB):', os.path.getsize("temp.p")/1e6)
-    os.remove('temp.p')
-
-print_size_of_model(model)
-print_size_of_model(quantized_model)
-```
-
-The BERT model used in this tutorial (bert-base-uncased) has a vocabulary size V of 30522. With the embedding size of 768, the total size of the word embedding table is ~ 4 (Bytes/FP32) * 30522 * 768 = 90 MB. So with the help of quantization, the model size of the non-embedding table part is reduced from 350 MB (FP32 model) to 90 MB (INT8 model).
-
-#### 3.2 Evaluate the inference accuracy and time
-
-Next, let’s compare the inference time as well as the evaluation accuracy between the original FP32 model and the INT8 model after the dynamic quantization.
-
-```python
-def time_model_evaluation(model, configs, tokenizer):
-    eval_start_time = time.time()
-    result = evaluate(configs, model, tokenizer, prefix="")
-    eval_end_time = time.time()
-    eval_duration_time = eval_end_time - eval_start_time
-    print(result)
-    print("Evaluate total time (seconds): {0:.1f}".format(eval_duration_time))
-
-# Evaluate the original FP32 BERT model
-time_model_evaluation(model, configs, tokenizer)
-
-# Evaluate the INT8 BERT model after the dynamic quantization
-time_model_evaluation(quantized_model, configs, tokenizer)
-```
-
-Running this locally on a MacBook Pro, without quantization, inference (for all 408 examples in MRPC dataset) takes about 160 seconds, and with quantization it takes just about 90 seconds. We summarize the results for running the quantized BERT model inference on a Macbook Pro as the follows:
-
-| Prec | F1 score | Model Size | 1 thread | 4 threads |
-|------|----------|------------|----------|-----------|
-| FP32 |  0.9019  |   438 MB   | 160 sec  | 85 sec    |
-| INT8 |  0.902   |   181 MB   |  90 sec  | 46 sec    |
-
-We have 0.6% lower F1 score accuracy after applying the post-training dynamic quantization on the fine-tuned BERT model on the MRPC task. As a comparison, in a recent paper (Table 1), it achieved 0.8788 by applying the post-training dynamic quantization and 0.8956 by applying the quantization-aware training. The main difference is that we support the asymmetric quantization in PyTorch while that paper supports the symmetric quantization only.
-
-Note that we set the number of threads to 1 for the single-thread comparison in this tutorial. We also support the intra-op parallelization for these quantized INT8 operators. The users can now set multi-thread by torch.set_num_threads(N) (N is the number of intra-op parallelization threads). One preliminary requirement to enable the intra-op parallelization support is to build PyTorch with the right backend such as OpenMP, Native or TBB. You can use torch.__config__.parallel_info() to check the parallelization settings. On the same MacBook Pro using PyTorch with Native backend for parallelization, we can get about 46 seconds for processing the evaluation of MRPC dataset.
-
-#### 3.3 Serialize the quantized model
-
-We can serialize and save the quantized model for the future use using torch.jit.save after tracing the model.
-
-```python
-def ids_tensor(shape, vocab_size):
-    #  Creates a random int32 tensor of the shape within the vocab size
-    return torch.randint(0, vocab_size, shape=shape, dtype=torch.int, device='cpu')
-
-input_ids = ids_tensor([8, 128], 2)
-token_type_ids = ids_tensor([8, 128], 2)
-attention_mask = ids_tensor([8, 128], vocab_size=2)
-dummy_input = (input_ids, attention_mask, token_type_ids)
-traced_model = torch.jit.trace(quantized_model, dummy_input)
-torch.jit.save(traced_model, "bert_traced_eager_quant.pt")
-```
-
-To load the quantized model, we can use torch.jit.load
-
-```python
-loaded_quantized_model = torch.jit.load("bert_traced_eager_quant.pt")
-```
-
-### Conclusion
-
-In this tutorial, we demonstrated how to convert a well-known state-of-the-art NLP model like BERT into dynamic quantized model. Dynamic quantization can reduce the size of the model while only having a limited implication on accuracy.
-
-## ✅ [FX Graph Mode Quantization User Guide](https://pytorch.org/tutorials/prototype/fx_graph_mode_quant_guide.html)
-
-### Introduction
-
-FX Graph Mode Quantization requires a symbolically traceable model. We use the FX framework to convert a symbolically traceable nn.Module instance to IR, and we operate on the IR to execute the quantization passes. If you have questions about symbolically tracing your model in PyTorch, please post them in the PyTorch Discussion Forum.
-
-Quantization will only work on the symbolically traceable parts of your model. The data dependent control flow-if statements / for loops, and so on using symbolically traced values-are one common pattern which is not supported.
-
-### Options for Non-Traceable Code
-
-#### Non-Traceable Code Doesn't Need to be Quantized
-
-1. **Symbolically trace only the code that needs to be quantized**
-   - When the whole model is not symbolically traceable but the submodule we want to quantize is symbolically traceable, we can run quantization only on that submodule.
-
-   **Before:**
-   ```python
-   class M(nn.Module):
-       def forward(self, x):
-           x = non_traceable_code_1(x)
-           x = traceable_code(x)
-           x = non_traceable_code_2(x)
-           return x
-   ```
-
-   **After:**
-   ```python
-   class FP32Traceable(nn.Module):
-       def forward(self, x):
-           x = traceable_code(x)
-           return x
-
-   class M(nn.Module):
-       def __init__(self):
-           self.traceable_submodule = FP32Traceable(...)
-       def forward(self, x):
-           x = self.traceable_code_1(x)
-           # We'll only symbolic trace/quantize this submodule
-           x = self.traceable_submodule(x)
-           x = self.traceable_code_2(x)
-           return x
-   ```
-
-   **Quantization code:**
-   ```python
-   qconfig_mapping = QConfigMapping().set_global(qconfig)
-   model_fp32.traceable_submodule = prepare_fx(model_fp32.traceable_submodule, qconfig_mapping, example_inputs)
-   ```
-
-   Note: If the original model needs to be preserved, you will have to copy it yourself before calling the quantization APIs.
-
-2. **Skip symbolic tracing the non-traceable code**
-   - When we have some non-traceable code in the module, and this part of code doesn’t need to be quantized, we can factor out this part of the code into a submodule and skip symbolically trace that submodule.
-
-   **Before:**
-   ```python
-   class M(nn.Module):
-       def forward(self, x):
-           x = self.traceable_code_1(x)
-           x = non_traceable_code(x)
-           x = self.traceable_code_2(x)
-           return x
-   ```
-
-   **After:**
-   ```python
-   class FP32NonTraceable(nn.Module):
-       def forward(self, x):
-           x = non_traceable_code(x)
-           return x
-
-   class M(nn.Module):
-       def __init__(self):
-           ...
-           self.non_traceable_submodule = FP32NonTraceable(...)
-
-       def forward(self, x):
-           x = self.traceable_code_1(x)
-           # we will configure the quantization call to not trace through this submodule
-           x = self.non_traceable_submodule(x)
-           x = self.traceable_code_2(x)
-           return x
-   ```
-
-   **Quantization code:**
-   ```python
-   qconfig_mapping = QConfigMapping.set_global(qconfig)
-   prepare_custom_config_dict = {
-       "non_traceable_module_name": "non_traceable_submodule",
-       # or
-       "non_traceable_module_class": [MNonTraceable],
-   }
-   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
-   ```
-
-#### Non-Traceable Code Needs to be Quantized
-
-1. **Refactor your code to make it symbolically traceable**
-   - If it is easy to refactor the code and make the code symbolically traceable, we can refactor the code and remove the use of non-traceable constructs in python.
-
-   **Before:**
-   ```python
-   def transpose_for_scores(self, x):
-       new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-       x = x.view(*new_x_shape)
-       return x.permute(0, 2, 1, 3)
-   ```
-
-   **After:**
-   ```python
-   def transpose_for_scores(self, x):
-       new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-       x = x.view(new_x_shape)
-       return x.permute(0, 2, 1, 3)
-   ```
-
-   This can be combined with other approaches and the quantization code depends on the model.
-
-2. **Write your own observed and quantized submodule**
-   - If the non-traceable code can’t be refactored to be symbolically traceable, for example it has some loops that can’t be eliminated, like nn.LSTM, we’ll need to factor out the non-traceable code to a submodule (we call it CustomModule in fx graph mode quantization) and define the observed and quantized version of the submodule (in post training static quantization or quantization aware training for static quantization) or define the quantized version (in post training dynamic and weight only quantization).
-
-   **Before:**
-   ```python
-   class M(nn.Module):
-       def forward(self, x):
-           x = traceable_code_1(x)
-           x = non_traceable_code(x)
-           x = traceable_code_1(x)
-           return x
-   ```
-
-   **After:**
-   - Factor out non_traceable_code to FP32NonTraceable non-traceable logic, wrapped in a module
-   - Define observed version of FP32NonTraceable
-   - Define statically quantized version of FP32NonTraceable and a class method “from_observed” to convert from ObservedNonTraceable to StaticQuantNonTraceable
-
-   **Quantization code:**
-   - Post training static quantization or quantization aware training (that produces a statically quantized module)
-   ```python
-   prepare_custom_config_dict = {
-       "float_to_observed_custom_module_class": {
-           "static": {
-               FP32NonTraceable: ObservedNonTraceable,
-           }
-       },
-   }
-   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
-   # calibrate / train (not shown)
-   convert_custom_config_dict = {
-       "observed_to_quantized_custom_module_class": {
-           "static": {
-               ObservedNonTraceable: StaticQuantNonTraceable,
-           }
-       },
-   }
-   model_quantized = convert_fx(model_prepared, convert_custom_config_dict)
-   ```
-
-   - Post training dynamic/weight only quantization in these two modes we don’t need to observe the original model, so we only need to define thee quantized model
-   ```python
-   class DynamicQuantNonTraceable: # or WeightOnlyQuantMNonTraceable
-      ...
-      @classmethod
-      def from_observed(cls, ...):
-          ...
-
-   prepare_custom_config_dict = {
-       "non_traceable_module_class": [
-           FP32NonTraceable
-       ]
-   }
-   # The example is for post training quantization
-   model_fp32.eval()
-   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
-   convert_custom_config_dict = {
-       "observed_to_quantized_custom_module_class": {
-           "dynamic": {
-               FP32NonTraceable: DynamicQuantNonTraceable,
-           }
-       },
-   }
-   model_quantized = convert_fx(model_prepared, convert_custom_config_dict)
-   ```
-
-   You can also find examples for custom modules in test test_custom_module_class in torch/test/quantization/test_quantize_fx.py.
-
-## ✅ [FX Graph Mode Post Training Static Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html)
-
-This tutorial introduces the steps to perform post training static quantization in graph mode based on torch.fx. The advantage of FX graph mode quantization is that it allows for fully automatic quantization of the model. Although there might be some effort required to make the model compatible with FX Graph Mode Quantization (symbolically traceable with torch.fx), we’ll have a separate tutorial to show how to make the part of the model we want to quantize compatible with FX Graph Mode Quantization. We also have a tutorial for FX Graph Mode Post Training Dynamic Quantization.
-
-The FX Graph Mode API looks like the following:
-
-```python
-import torch
-from torch.ao.quantization import get_default_qconfig
-from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
-from torch.ao.quantization import QConfigMapping
-
-float_model.eval()
-qconfig = get_default_qconfig("x86")
-qconfig_mapping = QConfigMapping().set_global(qconfig)
-
-def calibrate(model, data_loader):
-    model.eval()
-    with torch.no_grad():
-        for image, target in data_loader:
-            model(image)
-
-example_inputs = (next(iter(data_loader))[0])
-prepared_model = prepare_fx(float_model, qconfig_mapping, example_inputs)
-calibrate(prepared_model, data_loader_test)
-quantized_model = convert_fx(prepared_model)
-```
-
-### 1. Motivation of FX Graph Mode Quantization
-
-Currently, PyTorch only has eager mode quantization as an alternative: [Static Quantization with Eager Mode in PyTorch](link-to-eager-mode-tutorial).
-
-We can see there are multiple manual steps involved in the eager mode quantization process, including:
-
-- Explicitly quantizing and dequantizing activations
-- Explicitly fusing modules
-- Special handling for pytorch tensor operations (like add, concat, etc.)
-- Functionals did not have first class support (functional.conv2d and functional.linear would not get quantized)
-
-Most of these required modifications come from the underlying limitations of eager mode quantization. Eager mode works in module level since it cannot inspect the code that is actually run (in the forward function). Quantization is achieved by module swapping, and we don’t know how the modules are used in the forward function in eager mode, so it requires users to insert QuantStub and DeQuantStub manually to mark the points they want to quantize or dequantize.
-
-In graph mode, we can inspect the actual code that’s been executed in the forward function (e.g. aten function calls) and quantization is achieved by module and graph manipulations. Since graph mode has full visibility of the code that is run, our tool is able to automatically figure out things like which modules to fuse and where to insert observer calls, quantize/dequantize functions, etc., we are able to automate the whole quantization process.
-
-Advantages of FX Graph Mode Quantization are:
-
-- Simple quantization flow, minimal manual steps
-- Unlocks the possibility of doing higher level optimizations like automatic precision selection
-
-### 2. Define Helper Functions and Prepare Dataset
-
-We’ll start by doing the necessary imports, defining some helper functions, and preparing the data. These steps are identical to [Static Quantization with Eager Mode in PyTorch](link-to-eager-mode-tutorial).
-
-To run the code in this tutorial using the entire ImageNet dataset, first download imagenet by following the instructions at [ImageNet Data](link-to-imagenet-data). Unzip the downloaded file into the ‘data_path’ folder.
-
-Download the torchvision resnet18 model and rename it to data/resnet18_pretrained_float.pth.
-
-```python
-import os
-import sys
-import time
-import numpy as np
-
-import torch
-from torch.ao.quantization import get_default_qconfig, QConfigMapping
-from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx, fuse_fx
-import torch.nn as nn
-from torch.utils.data import DataLoader
-
-import torchvision
-from torchvision import datasets
-from torchvision.models.resnet import resnet18
-import torchvision.transforms as transforms
-
-# ... (other imports and warnings filtering)
-
-# Helper functions and data preparation code here
-```
-
-### 3. Set model to eval mode
-
-For post training quantization, we’ll need to set the model to eval mode.
-
-```python
-model_to_quantize.eval()
-```
-
-### 4. Specify how to quantize the model with QConfigMapping
-
-```python
-qconfig_mapping = QConfigMapping.set_global(default_qconfig)
-```
-
-We use the same qconfig used in eager mode quantization, qconfig is just a named tuple of the observers for activation and weight. QConfigMapping contains mapping information from ops to qconfigs:
-
-```python
-qconfig_mapping = (QConfigMapping()
-    .set_global(qconfig_opt)
-    .set_object_type(torch.nn.Conv2d, qconfig_opt)
-    .set_object_type("reshape", qconfig_opt)
-    .set_module_name_regex("foo.*bar.*conv[0-9]+", qconfig_opt)
-    .set_module_name("foo.bar", qconfig_opt)
-    .set_module_name_object_type_order()
-)
-```
-
-Priority (in increasing order): global, object_type, module_name_regex, module_name
-qconfig == None means fusion and quantization should be skipped for anything matching the rule (unless a higher priority match is found)
-
-Utility functions related to qconfig can be found in the qconfig file while those for QConfigMapping can be found in the [qconfig_mapping](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/qconfig_mapping.py) file.
-
-### 5. Prepare the Model for Post Training Static Quantization
-
-```python
-prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
-```
-
-The `prepare_fx` function folds BatchNorm modules into previous Conv2d modules, and inserts observers in appropriate places in the model.
-
-### 6. Calibration
-
-The calibration function is run after the observers are inserted in the model. The purpose of calibration is to run through some sample examples that are representative of the workload (for example, a sample of the training dataset) so that the observers in the model are able to observe the statistics of the Tensors and we can later use this information to calculate quantization parameters.
-
-```python
-def calibrate(model, data_loader):
-    model.eval()
-    with torch.no_grad():
-        for image, target in data_loader:
-            model(image)
-
-calibrate(prepared_model, data_loader_test)
-```
-
-### 7. Convert the Model to a Quantized Model
-
-```python
-quantized_model = convert_fx(prepared_model)
-```
-
-### 8. Evaluation
-
-We can now print the size and accuracy of the quantized model.
-
-```python
-print("Size of model before quantization")
-print_size_of_model(float_model)
-print("Size of model after quantization")
-print_size_of_model(quantized_model)
-top1, top5 = evaluate(quantized_model, criterion, data_loader_test)
-print("[before serialization] Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
-
-# Save and load the quantized model
-torch.jit.save(torch.jit.script(quantized_model), fx_graph_mode_model_file_path)
-loaded_quantized_model = torch.jit.load(fx_graph_mode_model_file_path)
-
-top1, top5 = evaluate(loaded_quantized_model, criterion, data_loader_test)
-print("[after serialization/deserialization] Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
-```
-
-### 9. Debugging Quantized Model
-
-We can also print the weight for quantized and non-quantized convolution ops to see the difference. First, call `fuse_fx` explicitly to fuse the convolution and batch norm in the model. Note that `fuse_fx` only works in eval mode.
-
-```python
-fused = fuse_fx(float_model)
-
-conv1_weight_after_fuse = fused.conv1[0].weight[0]
-conv1_weight_after_quant = quantized_model.conv1.weight().dequantize()[0]
-
-print(torch.max(abs(conv1_weight_after_fuse - conv1_weight_after_quant)))
-```
-
-### 10. Comparison with Baseline Float Model and Eager Mode Quantization
-
-```python
-print("Size of baseline model")
-print_size_of_model(float_model)
-
-top1, top5 = evaluate(float_model, criterion, data_loader_test)
-print("Baseline Float Model Evaluation accuracy: %2.2f, %2.2f"%(top1.avg, top5.avg))
-torch.jit.save(torch.jit.script(float_model), saved_model_dir + scripted_float_model_file)
-
-print("Size of Fx graph mode quantized model")
-print_size_of_model(quantized_model)
-top1, top5 = evaluate(quantized_model, criterion, data_loader_test)
-print("FX graph mode quantized model Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
-
-from torchvision.models.quantization.resnet import resnet18
-eager_quantized_model = resnet18(pretrained=True, quantize=True).eval()
-print("Size of eager mode quantized model")
-eager_quantized_model = torch.jit.script(eager_quantized_model)
-print_size_of_model(eager_quantized_model)
-top1, top5 = evaluate(eager_quantized_model, criterion, data_loader_test)
-print("eager mode quantized model Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
-torch.jit.save(eager_quantized_model, saved_model_dir + eager_mode_model_file)
-```
-
-We can see that the model size and accuracy of FX graph mode and eager mode quantized model are pretty similar.
-
-Running the model in AIBench (with single threading) gives the following result:
-
-- Scripted Float Model: Self CPU time total: 192.48ms
-- Scripted Eager Mode Quantized Model: Self CPU time total: 50.76ms
-- Scripted FX Graph Mode Quantized Model: Self CPU time total: 50.63ms
-
-As we can see for resnet18, both FX graph mode and eager mode quantized model get similar speedup over the floating point model, which is around 2-4x faster than the floating point model. However, the actual speedup over the floating point model may vary depending on the model, device, build, input batch sizes, threading, etc.
-
-## ✅ [FX Graph Mode Post Training Dynamic Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_dynamic.html)
-
-This tutorial introduces the steps to do post training dynamic quantization in graph mode based on torch.fx. We have a separate tutorial for FX Graph Mode Post Training Static Quantization. Comparison between FX Graph Mode Quantization and Eager Mode Quantization can be found in the quantization docs.
-
-**TL;DR:** The FX Graph Mode API for dynamic quantization looks like the following:
-
-```python
-import torch
-from torch.ao.quantization import default_dynamic_qconfig, QConfigMapping
-# Note that this is temporary, we'll expose these functions to torch.ao.quantization after official release
-from torch.quantization.quantize_fx import prepare_fx, convert_fx
-
-float_model.eval()
-# The old 'fbgemm' is still available but 'x86' is the recommended default.
-qconfig = get_default_qconfig("x86")
-qconfig_mapping = QConfigMapping().set_global(qconfig)
-prepared_model = prepare_fx(float_model, qconfig_mapping, example_inputs)  # fuse modules and insert observers
-# no calibration is required for dynamic quantization
-quantized_model = convert_fx(prepared_model)  # convert the model to a dynamically quantized model
-```
-
-In this tutorial, we’ll apply dynamic quantization to an LSTM-based next word-prediction model, closely following the word language model from the PyTorch examples. We will copy the code from Dynamic Quantization on an LSTM Word Language Model and omit the descriptions.
-
-### 1. Define the Model, Download Data and Model
-
-Download the data and unzip to data folder:
-
-```bash
-mkdir data
-cd data
-wget https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip
-unzip wikitext-2-v1.zip
-```
-
-Download model to the data folder:
-
-```bash
-wget https://s3.amazonaws.com/pytorch-tutorial-assets/word_language_model_quantize.pth
-```
-
-Define the model:
-
-```python
-# imports
-import os
-from io import open
-import time
-import copy
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-# Model Definition
-class LSTMModel(nn.Module):
-    """Container module with an encoder, a recurrent module, and a decoder."""
-
-    def __init__(self, ntoken, ninp, nhid, nlayers, dropout=0.5):
-        super(LSTMModel, self).__init__()
-        self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp)
-        self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout)
-        self.decoder = nn.Linear(nhid, ntoken)
-
-        self.init_weights()
-
-        self.nhid = nhid
-        self.nlayers = nlayers
-
-    def init_weights(self):
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)
-
-    def forward(self, input, hidden):
-        emb = self.drop(self.encoder(input))
-        output, hidden = self.rnn(emb, hidden)
-        output = self.drop(output)
-        decoded = self.decoder(output)
-        return decoded, hidden
-
-def init_hidden(lstm_model, bsz):
-    # get the weight tensor and create hidden layer in the same device
-    weight = lstm_model.encoder.weight
-    # get weight from quantized model
-    if not isinstance(weight, torch.Tensor):
-        weight = weight()
-    device = weight.device
-    nlayers = lstm_model.rnn.num_layers
-    nhid = lstm_model.rnn.hidden_size
-    return (torch.zeros(nlayers, bsz, nhid, device=device),
-            torch.zeros(nlayers, bsz, nhid, device=device))
-
-# Load Text Data
-class Dictionary(object):
-    def __init__(self):
-        self.word2idx = {}
-        self.idx2word = []
-
-    def add_word(self, word):
-        if word not in self.word2idx:
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-        return self.word2idx[word]
-
-    def __len__(self):
-        return len(self.idx2word)
-
-class Corpus(object):
-    def __init__(self, path):
-        self.dictionary = Dictionary()
-        self.train = self.tokenize(os.path.join(path, 'wiki.train.tokens'))
-        self.valid = self.tokenize(os.path.join(path, 'wiki.valid.tokens'))
-        self.test = self.tokenize(os.path.join(path, 'wiki.test.tokens'))
-
-    def tokenize(self, path):
-        """Tokenizes a text file."""
-        assert os.path.exists(path)
-        # Add words to the dictionary
-        with open(path, 'r', encoding="utf8") as f:
-            for line in f:
-                words = line.split() + ['<eos>']
-                for word in words:
-                    self.dictionary.add_word(word)
-
-        # Tokenize file content
-        with open(path, 'r', encoding="utf8") as f:
-            idss = []
-            for line in f:
-                words = line.split() + ['<eos>']
-                ids = []
-                for word in words:
-                    ids.append(self.dictionary.word2idx[word])
-                idss.append(torch.tensor(ids).type(torch.int64))
-            ids = torch.cat(idss)
-
-        return ids
-
-model_data_filepath = 'data/'
-
-corpus = Corpus(model_data_filepath + 'wikitext-2')
-
-ntokens = len(corpus.dictionary)
-
-# Load Pretrained Model
-model = LSTMModel(
-    ntoken = ntokens,
-    ninp = 512,
-    nhid = 256,
-    nlayers = 5,
-)
-
-model.load_state_dict(
-    torch.load(
-        model_data_filepath + 'word_language_model_quantize.pth',
-        map_location=torch.device('cpu')
-        )
-    )
-
-model.eval()
-print(model)
-
-bptt = 25
-criterion = nn.CrossEntropyLoss()
-eval_batch_size = 1
-
-# create test data set
-def batchify(data, bsz):
-    # Work out how cleanly we can divide the dataset into bsz parts.
-    nbatch = data.size(0) // bsz
-    # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    data = data.narrow(0, 0, nbatch * bsz)
-    # Evenly divide the data across the bsz batches.
-    return data.view(bsz, -1).t().contiguous()
-
-test_data = batchify(corpus.test, eval_batch_size)
-example_inputs = (next(iter(test_data))[0])
-
-# Evaluation functions
-def get_batch(source, i):
-    seq_len = min(bptt, len(source) - 1 - i)
-    data = source[i:i+seq_len]
-    target = source[i+1:i+1+seq_len].reshape(-1)
-    return data, target
-
-def repackage_hidden(h):
-  """Wraps hidden states in new Tensors, to detach them from their history."""
-
-  if isinstance(h, torch.Tensor):
-      return h.detach()
-  else:
-      return tuple(repackage_hidden(v) for v in h)
-
-def evaluate(model_, data_source):
-    # Turn on evaluation mode which disables dropout.
-    model_.eval()
-    total_loss = 0.
-    hidden = init_hidden(model_, eval_batch_size)
-    with torch.no_grad():
-        for i in range(0, data_source.size(0) - 1, bptt):
-            data, targets = get_batch(data_source, i)
-            output, hidden = model_(data, hidden)
-            hidden = repackage_hidden(hidden)
-            output_flat = output.view(-1, ntokens)
-            total_loss += len(data) * criterion(output_flat, targets).item()
-    return total_loss / (len(data_source) - 1)
-```
-
-### 2. Post Training Dynamic Quantization
-
-Now we can dynamically quantize the model. We can use the same function as post training static quantization but with a dynamic qconfig.
-
-```python
-from torch.quantization.quantize_fx import prepare_fx, convert_fx
-from torch.ao.quantization import default_dynamic_qconfig, float_qparams_weight_only_qconfig, QConfigMapping
-
-# Full docs for supported qconfig for floating point modules/ops can be found in `quantization docs <https://pytorch.org/docs/stable/quantization.html#module-torch.quantization>`_
-# Full docs for `QConfigMapping <https://pytorch.org/docs/stable/generated/torch.ao.quantization.qconfig_mapping.QConfigMapping.html#torch.ao.quantization.qconfig_mapping.QConfigMapping>`_
-qconfig_mapping = (QConfigMapping()
-    .set_object_type(nn.Embedding, float_qparams_weight_only_qconfig)
-    .set_object_type(nn.LSTM, default_dynamic_qconfig)
-    .set_object_type(nn.Linear, default_dynamic_qconfig)
-)
-# Load model to create the original model because quantization api changes the model inplace and we want
-# to keep the original model for future comparison
-
-model_to_quantize = LSTMModel(
-    ntoken = ntokens,
-    ninp = 512,
-    nhid = 256,
-    nlayers = 5,
-)
-
-model_to_quantize.load_state_dict(
-    torch.load(
-        model_data_filepath + 'word_language_model_quantize.pth',
-        map_location=torch.device('cpu')
-        )
-    )
-
-model_to_quantize.eval()
-
-prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
-print("prepared model:", prepared_model)
-quantized_model = convert_fx(prepared_model)
-print("quantized model", quantized_model)
-```
-
-For dynamically quantized objects, we didn’t do anything in prepare_fx for modules, but will insert observers for weight for dynamically quantizable forunctionals and torch ops. We also fuse the modules like Conv + Bn, Linear + ReLU.
-
-In convert we’ll convert the float modules to dynamically quantized modules and convert float ops to dynamically quantized ops. We can see in the example model, nn.Embedding, nn.Linear and nn.LSTM are dynamically quantized.
-
-Now we can compare the size and runtime of the quantized model.
-
-```python
-def print_size_of_model(model):
-    torch.save(model.state_dict(), "temp.p")
-    print('Size (MB):', os.path.getsize("temp.p")/1e6)
-    os.remove('temp.p')
-
-print_size_of_model(model)
-print_size_of_model(quantized_model)
-```
-
-There is a 4x size reduction because we quantized all the weights in the model (nn.Embedding, nn.Linear and nn.LSTM) from float (4 bytes) to quantized int (1 byte).
-
-```python
-torch.set_num_threads(1)
-
-def time_model_evaluation(model, test_data):
-    s = time.time()
-    loss = evaluate(model, test_data)
-    elapsed = time.time() - s
-    print('''loss: {0:.3f}\nelapsed time (seconds): {1:.1f}'''.format(loss, elapsed))
-
-time_model_evaluation(model, test_data)
-time_model_evaluation(quantized_model, test_data)
-```
-
-There is a roughly 2x speedup for this model. Also note that the speedup may vary depending on model, device, build, input batch sizes, threading etc.
-
-### 3. Conclusion
-
-This tutorial introduces the api for post training dynamic quantization in FX Graph Mode, which dynamically quantizes the same modules as Eager Mode Quantization.
-
-## ✅ [Static Quantization with Eager Mode in PyTorch](https://pytorch.org/tutorials/advanced/static_quantization_tutorial.html)
-
-This tutorial shows how to do post-training static quantization, as well as illustrating two more advanced techniques - per-channel quantization and quantization-aware training - to further improve the model’s accuracy. Note that quantization is currently only supported for CPUs, so we will not be utilizing GPUs / CUDA in this tutorial. By the end of this tutorial, you will see how quantization in PyTorch can result in significant decreases in model size while increasing speed. Furthermore, you’ll see how to easily apply some advanced quantization techniques shown here so that your quantized models take much less of an accuracy hit than they would otherwise.
-
-Warning: we use a lot of boilerplate code from other PyTorch repos to, for example, define the MobileNetV2 model architecture, define data loaders, and so on. We of course encourage you to read it; but if you want to get to the quantization features, feel free to skip to the “4. Post-training static quantization” section.
-
-### 1. Model architecture
-
-We first define the MobileNetV2 model architecture, with several notable modifications to enable quantization:
-
-- Replacing addition with `nn.quantized.FloatFunctional`
-- Insert `QuantStub` and `DeQuantStub` at the beginning and end of the network.
-- Replace ReLU6 with ReLU
-
-Note: this code is taken from [here](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/mobilenet_example.py).
-
-### 2. Helper functions
-
-We next define several helper functions to help with model evaluation. These mostly come from [here](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/mobilenet_example.py).
-
-### 3. Define dataset and data loaders
-
-As our last major setup step, we define our dataloaders for our training and testing set.
-
-### 4. Post-training static quantization
-
-Post-training static quantization involves not just converting the weights from float to int, as in dynamic quantization, but also performing the additional step of first feeding batches of data through the network and computing the resulting distributions of the different activations (specifically, this is done by inserting observer modules at different points that record this data). These distributions are then used to determine how the specifically the different activations should be quantized at inference time (a simple technique would be to simply divide the entire range of activations into 256 levels, but we support more sophisticated methods as well). Importantly, this additional step allows us to pass quantized values between operations instead of converting these values to floats - and then back to ints - between every operation, resulting in a significant speed-up.
-
-### 5. Quantization-aware training
-
-Quantization-aware training (QAT) is the quantization method that typically results in the highest accuracy. With QAT, all weights and activations are “fake quantized” during both the forward and backward passes of training: that is, float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all the weight adjustments during training are made while “aware” of the fact that the model will ultimately be quantized; after quantizing, therefore, this method will usually yield higher accuracy than either dynamic quantization or post-training static quantization.
-
-The overall workflow for actually performing QAT is very similar to before:
-
-- We can use the same model as before: there is no additional preparation needed for quantization-aware training.
-- We need to use a qconfig specifying what kind of fake-quantization is to be inserted after weights and activations, instead of specifying observers
-- We first define a training function:
-- We fuse modules as before
-- Finally, `prepare_qat` performs the “fake quantization”, preparing the model for quantization-aware training
-
-### Speedup from quantization
-
-Finally, let’s confirm something we alluded to above: do our quantized models actually perform inference faster? Let’s test:
-
-```python
-def run_benchmark(model_file, img_loader):
-    elapsed = 0
-    model = torch.jit.load(model_file)
-    model.eval()
-    num_batches = 5
-    # Run the scripted model on a few batches of images
-    for i, (images, target) in enumerate(img_loader):
-        if i < num_batches:
-            start = time.time()
-            output = model(images)
-            end = time.time()
-            elapsed = elapsed + (end-start)
-        else:
-            break
-    num_images = images.size()[0] * num_batches
-
-    print('Elapsed time: %3.0f ms' % (elapsed/num_images*1000))
-    return elapsed
-
-run_benchmark(saved_model_dir + scripted_float_model_file, data_loader_test)
-
-run_benchmark(saved_model_dir + scripted_quantized_model_file, data_loader_test)
-```
-
-Running this locally on a MacBook pro yielded 61 ms for the regular model, and just 20 ms for the quantized model, illustrating the typical 2-4x speedup we see for quantized models compared to floating point ones.
-
-### Conclusion
-
-In this tutorial, we showed two quantization methods - post-training static quantization, and quantization-aware training - describing what they do “under the hood” and how to use them in PyTorch.
-
-Thanks for reading! As always, we welcome any feedback, so please create an issue [here](https://github.com/pytorch/pytorch/issues) if you have any.
 
 ## [PyTorch Numeric Suite Tutorial](https://pytorch.org/tutorials/prototype/numeric_suite_tutorial.html)
 
@@ -2408,7 +895,1575 @@ SQNR of 40 dB is high and this is a situation where we have very good numerical 
 
 In this tutorial, we demonstrated how to use PyTorch Numeric Suite to measure and compare the statistics between quantized model and float model in eager mode with unified APIs for both static quantization and dynamic quantization.
 
-## ✅ [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html)
+## [PyTorch BackendConfig](https://pytorch.org/tutorials/prototype/backend_config_tutorial.html?highlight=backend)
+
+
+The BackendConfig API enables developers to integrate their backends with PyTorch quantization. It is currently only supported in FX graph mode quantization, but support may be extended to other modes of quantization in the future. In this tutorial, we will demonstrate how to use this API to customize quantization support for specific backends. For more information on the motivation and implementation details behind BackendConfig, please refer to [this README](README.md).
+
+### 1. Derive reference pattern for each quantized operator
+
+Suppose we are a backend developer and we wish to integrate our backend with PyTorch’s quantization APIs. Our backend consists of two ops only: quantized linear and quantized conv-relu. In this section, we will walk through how to achieve this by quantizing an example model using a custom BackendConfig through prepare_fx and convert_fx.
+
+For quantized linear, suppose our backend expects the reference pattern [dequant - fp32_linear - quant] and lowers it into a single quantized linear op. The way to achieve this is to first insert quant-dequant ops before and after the float linear op, such that we produce the following reference model:
+
+quant1 - [dequant1 - fp32_linear - quant2] - dequant2
+
+Similarly, for quantized conv-relu, we wish to produce the following reference model, where the reference pattern in the square brackets will be lowered into a single quantized conv-relu op:
+
+quant1 - [dequant1 - fp32_conv_relu - quant2] - dequant2
+
+### 2. Set DTypeConfigs with backend constraints
+
+In the reference patterns above, the input dtype specified in the DTypeConfig will be passed as the dtype argument to quant1, while the output dtype will be passed as the dtype argument to quant2. If the output dtype is fp32, as in the case of dynamic quantization, then the output quant-dequant pair will not be inserted. This example also shows how to specify restrictions on quantization and scale ranges on a particular dtype.
+
+### 3. Set up fusion for conv-relu
+
+Note that the original user model contains separate conv and relu ops, so we need to first fuse the conv and relu ops into a single conv-relu op (fp32_conv_relu), and then quantize this op similar to how the linear op is quantized. We can set up fusion by defining a function that accepts 3 arguments, where the first is whether or not this is for QAT, and the remaining arguments refer to the individual items of the fused pattern.
+
+### 4. Define the BackendConfig
+
+Now we have all the necessary pieces, so we go ahead and define our BackendConfig. Here we use different observers (will be renamed) for the input and output for the linear op, so the quantization params passed to the two quantize ops (quant1 and quant2) will be different. This is commonly the case for weighted ops like linear and conv.
+
+For the conv-relu op, the observation type is the same. However, we need two BackendPatternConfigs to support this op, one for fusion and one for quantization. For both conv-relu and linear, we use the DTypeConfig defined above.
+
+### 5. Set up QConfigMapping that satisfies the backend constraints
+
+In order to use the ops defined above, the user must define a QConfig that satisfies the constraints specified in the DTypeConfig. For more detail, see the documentation for DTypeConfig. We will then use this QConfig for all the modules used in the patterns we wish to quantize.
+
+### 6. Quantize the model through prepare and convert
+
+Finally, we quantize the model by passing the BackendConfig we defined into prepare and convert. This produces a quantized linear module and a fused quantized conv-relu module.
+
+### 7. Experiment with faulty BackendConfig setups
+
+As an experiment, here we modify the model to use conv-bn-relu instead of conv-relu, but use the same BackendConfig, which doesn’t know how to quantize conv-bn-relu. As a result, only linear is quantized, but conv-bn-relu is neither fused nor quantized.
+
+### Built-in BackendConfigs
+
+PyTorch quantization supports a few built-in native BackendConfigs under the torch.ao.quantization.backend_config namespace:
+
+- get_fbgemm_backend_config: for server target settings
+- get_qnnpack_backend_config: for mobile and edge device target settings, also supports XNNPACK quantized ops
+- get_native_backend_config (default): a BackendConfig that supports a union of the operator patterns supported in the FBGEMM and QNNPACK BackendConfigs
+
+There are also other BackendConfigs under development (e.g. for TensorRT and x86), but these are still mostly experimental at the moment. If the user wishes to integrate a new, custom backend with PyTorch’s quantization API, they may define their own BackendConfigs using the same set of APIs used to define the natively supported ones as in the example above.
+
+
+
+## [Dynamic Quantization](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html)
+
+In this recipe, you will learn how to leverage Dynamic Quantization to accelerate inference on an LSTM-style recurrent neural network. This technique reduces the size of the model weights and speeds up model execution.
+
+### Introduction
+
+When designing neural networks, there are various trade-offs to consider. During model development and training, you can adjust the number of layers and parameters in a recurrent neural network, trading off accuracy against model size and/or latency or throughput. Quantization provides a way to make a similar trade-off between performance and model accuracy after training is completed.
+
+With dynamic quantization, you can significantly reduce your model size and potentially achieve a significant latency reduction without losing much accuracy. This technique allows you to test the trade-off between performance and model accuracy in a single session.
+
+### What is dynamic quantization?
+
+Quantizing a network means converting it to use a reduced precision integer representation for the weights and/or activations. This saves on model size and allows the use of higher throughput math operations on your CPU or GPU.
+
+Dynamic quantization determines the scale factor for activations dynamically based on the data range observed at runtime. This ensures that the scale factor is "tuned" so that as much signal as possible about each observed dataset is preserved. The model parameters, on the other hand, are converted ahead of time and stored in INT8 form.
+
+Arithmetic in the quantized model is done using vectorized INT8 instructions. Accumulation is typically done with INT16 or INT32 to avoid overflow. This higher precision value is scaled back to INT8 if the next layer is quantized or converted to FP32 for output.
+
+Dynamic quantization is relatively free of tuning parameters, which makes it well-suited to be added into production pipelines as a standard part of converting LSTM models to deployment.
+
+**Note:**
+
+Limitations of the approach taken here:
+
+- This recipe provides a quick introduction to the dynamic quantization features in PyTorch and the workflow for using it.
+- The focus is on explaining the specific functions used to convert the model.
+- Several significant simplifications are made in the interest of brevity and clarity.
+- The network used is a minimal LSTM network.
+- The network is initialized with a random hidden state.
+- The network is tested with random inputs.
+- The network is not trained in this tutorial.
+- The output values of the quantized network are generally in the same ballpark as the output of the FP32 network, but the expected accuracy loss on a real trained network is not demonstrated here.
+
+### Steps
+
+This recipe has 5 steps.
+
+#### 1: Set Up
+
+This is a straightforward bit of code to set up for the rest of the recipe.
+
+The unique module we are importing here is `torch.quantization`, which includes PyTorch’s quantized operators and conversion functions. We also define a very simple LSTM model and set up some inputs.
+
+```python
+# import the modules used here in this recipe
+import torch
+import torch.quantization
+import torch.nn as nn
+import copy
+import os
+import time
+
+# define a very, very simple LSTM for demonstration purposes
+# in this case, we are wrapping ``nn.LSTM``, one layer, no preprocessing or postprocessing
+# inspired by
+# `Sequence Models and Long Short-Term Memory Networks tutorial <https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html>`_, by Robert Guthrie
+# and `Dynamic Quanitzation tutorial <https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html>`__.
+class lstm_for_demonstration(nn.Module):
+  """Elementary Long Short Term Memory style model which simply wraps ``nn.LSTM``
+     Not to be used for anything other than demonstration.
+  """
+  def __init__(self,in_dim,out_dim,depth):
+     super(lstm_for_demonstration,self).__init__()
+     self.lstm = nn.LSTM(in_dim,out_dim,depth)
+
+  def forward(self,inputs,hidden):
+     out,hidden = self.lstm(inputs,hidden)
+     return out, hidden
+
+torch.manual_seed(29592)  # set the seed for reproducibility
+
+# shape parameters
+model_dimension = 8
+sequence_length = 20
+batch_size = 1
+lstm_depth = 1
+
+# random data for input
+inputs = torch.randn(sequence_length, batch_size, model_dimension)
+# hidden is actually is a tuple of the initial hidden state and the initial cell state
+hidden = (torch.randn(lstm_depth, batch_size, model_dimension), torch.randn(lstm_depth, batch_size, model_dimension))
+```
+
+#### 2: Do the Quantization
+
+Now we get to the fun part. First, we create an instance of the model called `float_lstm`, then we are going to quantize it. We’re going to use the `torch.quantization.quantize_dynamic` function, which takes the model, then a list of the submodules which we want to have quantized if they appear, then the datatype we are targeting. This function returns a quantized version of the original model as a new module.
+
+```python
+# here is our floating point instance
+float_lstm = lstm_for_demonstration(model_dimension, model_dimension, lstm_depth)
+
+# this is the call that does the work
+quantized_lstm = torch.quantization.quantize_dynamic(
+    float_lstm, {nn.LSTM, nn.Linear}, dtype=torch.qint8
+)
+
+# show the changes that were made
+print('Here is the floating point version of this module:')
+print(float_lstm)
+print('')
+print('and now the quantized version:')
+print(quantized_lstm)
+```
+
+#### 3: Look at Model Size
+
+We’ve quantized the model. What does that get us? Well, the first benefit is that we’ve replaced the FP32 model parameters with INT8 values (and some recorded scale factors). This means about 75% less data to store and move around. With the default values, the reduction shown below will be less than 75% but if you increase the model size above (for example, you can set model dimension to something like 80), this will converge towards 4x smaller as the stored model size is dominated more and more by the parameter values.
+
+```python
+def print_size_of_model(model, label=""):
+    torch.save(model.state_dict(), "temp.p")
+    size = os.path.getsize("temp.p")
+    print("model: ", label, '\t', 'Size (KB):', size/1e3)
+    os.remove('temp.p')
+    return size
+
+# compare the sizes
+f = print_size_of_model(float_lstm, "fp32")
+q = print_size_of_model(quantized_lstm, "int8")
+print("{0:.2f} times smaller".format(f/q))
+```
+
+#### 4: Look at Latency
+
+The second benefit is that the quantized model will typically run faster. This is due to a combination of effects including at least:
+
+- Less time spent moving parameter data in
+- Faster INT8 operations
+
+As you will see, the quantized version of this super-simple network runs faster. This will generally be true of more complex networks, but as they say, "your mileage may vary" depending on a number of factors including the structure of the model and the hardware you are running on.
+
+```python
+# compare the performance
+print("Floating point FP32")
+%timeit float_lstm.forward(inputs, hidden)
+print("Quantized INT8")
+%timeit quantized_lstm.forward(inputs, hidden)
+```
+
+#### 5: Look at Accuracy
+
+We are not going to do a careful look at accuracy here because we are working with a randomly initialized network rather than a properly trained one. However, I think it is worth quickly showing that the quantized network does produce output tensors that are "in the same ballpark" as the original one.
+
+For a more detailed analysis, please see the more advanced tutorials referenced at the end of this recipe.
+
+```python
+# run the float model
+out1, hidden1 = float_lstm(inputs, hidden)
+mag1 = torch.mean(abs(out1)).item()
+print('mean absolute value of output tensor values in the FP32 model is {0:.5f} '.format(mag1))
+
+# run the quantized model
+out2, hidden2 = quantized_lstm(inputs, hidden)
+mag2 = torch.mean(abs(out2)).item()
+print('mean absolute value of output tensor values in the INT8 model is {0:.5f}'.format(mag2))
+
+# compare them
+mag3 = torch.mean(abs(out1-out2)).item()
+print('mean absolute value of the difference between the output tensors is {0:.5f} or {1:.2f} percent'.format(mag3, mag3/mag1*100))
+```
+
+## [Dynamic Quantization on an LSTM Word Language Model](https://pytorch.org/tutorials/advanced/dynamic_quantization_tutorial.html)
+
+### Introduction
+
+Quantization involves converting the weights and activations of your model from float to int, which can result in smaller model size and faster inference with only a small hit to accuracy.
+
+In this tutorial, we will apply the easiest form of quantization - dynamic quantization - to an LSTM-based next word-prediction model, closely following the word language model from the PyTorch examples.
+
+### Imports
+
+```python
+import os
+from io import open
+import time
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+```
+
+### 1. Define the model
+
+Here we define the LSTM model architecture, following the model from the word language model example.
+
+```python
+class LSTMModel(nn.Module):
+    """Container module with an encoder, a recurrent module, and a decoder."""
+
+    def __init__(self, ntoken, ninp, nhid, nlayers, dropout=0.5):
+        super(LSTMModel, self).__init__()
+        self.drop = nn.Dropout(dropout)
+        self.encoder = nn.Embedding(ntoken, ninp)
+        self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout)
+        self.decoder = nn.Linear(nhid, ntoken)
+
+        self.init_weights()
+
+        self.nhid = nhid
+        self.nlayers = nlayers
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, input, hidden):
+        emb = self.drop(self.encoder(input))
+        output, hidden = self.rnn(emb, hidden)
+        output = self.drop(output)
+        decoded = self.decoder(output)
+        return decoded, hidden
+
+    def init_hidden(self, bsz):
+        weight = next(self.parameters())
+        return (weight.new_zeros(self.nlayers, bsz, self.nhid),
+                weight.new_zeros(self.nlayers, bsz, self.nhid))
+```
+
+### 2. Load in the text data
+
+Next, we load the Wikitext-2 dataset into a Corpus, again following the preprocessing from the word language model example.
+
+```python
+class Dictionary(object):
+    def __init__(self):
+        self.word2idx = {}
+        self.idx2word = []
+
+    def add_word(self, word):
+        if word not in self.word2idx:
+            self.idx2word.append(word)
+            self.word2idx[word] = len(self.idx2word) - 1
+        return self.word2idx[word]
+
+    def __len__(self):
+        return len(self.idx2word)
+
+class Corpus(object):
+    def __init__(self, path):
+        self.dictionary = Dictionary()
+        self.train = self.tokenize(os.path.join(path, 'train.txt'))
+        self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
+        self.test = self.tokenize(os.path.join(path, 'test.txt'))
+
+    def tokenize(self, path):
+        """Tokenizes a text file."""
+        assert os.path.exists(path)
+        # Add words to the dictionary
+        with open(path, 'r', encoding="utf8") as f:
+            for line in f:
+                words = line.split() + ['<eos>']
+                for word in words:
+                    self.dictionary.add_word(word)
+
+        # Tokenize file content
+        with open(path, 'r', encoding="utf8") as f:
+            idss = []
+            for line in f:
+                words = line.split() + ['<eos>']
+                ids = []
+                for word in words:
+                    ids.append(self.dictionary.word2idx[word])
+                idss.append(torch.tensor(ids).type(torch.int64))
+            ids = torch.cat(idss)
+
+        return ids
+
+model_data_filepath = 'data/'
+
+corpus = Corpus(model_data_filepath + 'wikitext-2')
+```
+
+### 3. Load the pretrained model
+
+This is a tutorial on dynamic quantization, a quantization technique that is applied after a model has been trained. Therefore, we’ll simply load some pretrained weights into this model architecture; these weights were obtained by training for five epochs using the default settings in the word language model example.
+
+```python
+ntokens = len(corpus.dictionary)
+
+model = LSTMModel(
+    ntoken = ntokens,
+    ninp = 512,
+    nhid = 256,
+    nlayers = 5,
+)
+
+model.load_state_dict(
+    torch.load(
+        model_data_filepath + 'word_language_model_quantize.pth',
+        map_location=torch.device('cpu')
+        )
+    )
+
+model.eval()
+print(model)
+```
+
+Now let’s generate some text to ensure that the pretrained model is working properly - similarly to before, we follow here
+
+```python
+input_ = torch.randint(ntokens, (1, 1), dtype=torch.long)
+hidden = model.init_hidden(1)
+temperature = 1.0
+num_words = 1000
+
+with open(model_data_filepath + 'out.txt', 'w') as outf:
+    with torch.no_grad():  # no tracking history
+        for i in range(num_words):
+            output, hidden = model(input_, hidden)
+            word_weights = output.squeeze().div(temperature).exp().cpu()
+            word_idx = torch.multinomial(word_weights, 1)[0]
+            input_.fill_(word_idx)
+
+            word = corpus.dictionary.idx2word[word_idx]
+
+            outf.write(str(word.encode('utf-8')) + ('\n' if i % 20 == 19 else ' '))
+
+            if i % 100 == 0:
+                print('| Generated {}/{} words'.format(i, 1000))
+
+with open(model_data_filepath + 'out.txt', 'r') as outf:
+    all_output = outf.read()
+    print(all_output)
+```
+
+It’s no GPT-2, but it looks like the model has started to learn the structure of language!
+
+### 4. Test dynamic quantization
+
+Finally, we can call torch.quantization.quantize_dynamic on the model! Specifically,
+
+- We specify that we want the nn.LSTM and nn.Linear modules in our model to be quantized
+- We specify that we want weights to be converted to int8 values
+
+```python
+import torch.quantization
+
+quantized_model = torch.quantization.quantize_dynamic(
+    model, {nn.LSTM, nn.Linear}, dtype=torch.qint8
+)
+print(quantized_model)
+```
+
+The model looks the same; how has this benefited us? First, we see a significant reduction in model size:
+
+```python
+def print_size_of_model(model):
+    torch.save(model.state_dict(), "temp.p")
+    print('Size (MB):', os.path.getsize("temp.p")/1e6)
+    os.remove('temp.p')
+
+print_size_of_model(model)
+print_size_of_model(quantized_model)
+```
+
+Second, we see faster inference time, with no difference in evaluation loss:
+
+Note: we set the number of threads to one for single threaded comparison, since quantized models run single threaded.
+
+```python
+torch.set_num_threads(1)
+
+def time_model_evaluation(model, test_data):
+    s = time.time()
+    loss = evaluate(model, test_data)
+    elapsed = time.time() - s
+    print('''loss: {0:.3f}\nelapsed time (seconds): {1:.1f}'''.format(loss, elapsed))
+
+time_model_evaluation(model, test_data)
+time_model_evaluation(quantized_model, test_data)
+```
+
+## [Dynamic Quantization on BERT](https://pytorch.org/tutorials/intermediate/dynamic_quantization_bert_tutorial.html)
+
+### Introduction
+
+In this tutorial, we will apply the dynamic quantization on a BERT model, closely following the BERT model from the HuggingFace Transformers examples. With this step-by-step journey, we would like to demonstrate how to convert a well-known state-of-the-art model like BERT into dynamic quantized model.
+
+BERT, or Bidirectional Embedding Representations from Transformers, is a new method of pre-training language representations which achieves the state-of-the-art accuracy results on many popular Natural Language Processing (NLP) tasks, such as question answering, text classification, and others. The original paper can be found [here](https://arxiv.org/abs/1810.04805).
+
+Dynamic quantization support in PyTorch converts a float model to a quantized model with static int8 or float16 data types for the weights and dynamic quantization for the activations. The activations are quantized dynamically (per batch) to int8 when the weights are quantized to int8. In PyTorch, we have torch.quantization.quantize_dynamic API, which replaces specified modules with dynamic weight-only quantized versions and output the quantized model.
+
+We demonstrate the accuracy and inference performance results on the Microsoft Research Paraphrase Corpus (MRPC) task in the General Language Understanding Evaluation benchmark (GLUE). The MRPC (Dolan and Brockett, 2005) is a corpus of sentence pairs automatically extracted from online news sources, with human annotations of whether the sentences in the pair are semantically equivalent. As the classes are imbalanced (68% positive, 32% negative), we follow the common practice and report F1 score. MRPC is a common NLP task for language pair classification, as shown below.
+
+### 1. Setup
+
+#### 1.1 Install PyTorch and HuggingFace Transformers
+
+To start this tutorial, let’s first follow the installation instructions in PyTorch [here](https://pytorch.org/get-started/locally/) and HuggingFace Github Repo [here](https://github.com/huggingface/transformers). In addition, we also install scikit-learn package, as we will reuse its built-in F1 score calculation helper function.
+
+```bash
+pip install sklearn
+pip install transformers==4.29.2
+```
+
+#### 1.2 Import the necessary modules
+
+In this step we import the necessary Python modules for the tutorial.
+
+```python
+import logging
+import numpy as np
+import os
+import random
+import sys
+import time
+import torch
+
+from argparse import Namespace
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+from tqdm import tqdm
+from transformers import (BertConfig, BertForSequenceClassification, BertTokenizer,)
+from transformers import glue_compute_metrics as compute_metrics
+from transformers import glue_output_modes as output_modes
+from transformers import glue_processors as processors
+from transformers import glue_convert_examples_to_features as convert_examples_to_features
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt = '%m/%d/%Y %H:%M:%S',
+                    level = logging.WARN)
+
+logging.getLogger("transformers.modeling_utils").setLevel(
+   logging.WARN)  # Reduce logging
+
+print(torch.__version__)
+```
+
+We set the number of threads to compare the single thread performance between FP32 and INT8 performance. In the end of the tutorial, the user can set other number of threads by building PyTorch with right parallel backend.
+
+```python
+torch.set_num_threads(1)
+print(torch.__config__.parallel_info())
+```
+
+#### 1.3 Learn about helper functions
+
+The helper functions are built-in in transformers library. We mainly use the following helper functions: one for converting the text examples into the feature vectors; The other one for measuring the F1 score of the predicted result.
+
+The glue_convert_examples_to_features function converts the texts into input features:
+
+- Tokenize the input sequences;
+- Insert [CLS] in the beginning;
+- Insert [SEP] between the first sentence and the second sentence, and in the end;
+- Generate token type ids to indicate whether a token belongs to the first sequence or the second sequence.
+
+The glue_compute_metrics function has the compute metrics with the F1 score, which can be interpreted as a weighted average of the precision and recall, where an F1 score reaches its best value at 1 and worst score at 0. The relative contribution of precision and recall to the F1 score are equal.
+
+The equation for the F1 score is:
+
+F1 = 2 * (precision * recall) / (precision + recall)
+
+#### 1.4 Download the dataset
+
+Before running MRPC tasks we download the GLUE data by running this script and unpack it to a directory glue_data.
+
+```bash
+python download_glue_data.py --data_dir='glue_data' --tasks='MRPC'
+```
+
+### 2. Fine-tune the BERT model
+
+The spirit of BERT is to pre-train the language representations and then to fine-tune the deep bi-directional representations on a wide range of tasks with minimal task-dependent parameters, and achieves state-of-the-art results. In this tutorial, we will focus on fine-tuning with the pre-trained BERT model to classify semantically equivalent sentence pairs on MRPC task.
+
+To fine-tune the pre-trained BERT model (bert-base-uncased model in HuggingFace transformers) for the MRPC task, you can follow the command in examples:
+
+```bash
+export GLUE_DIR=./glue_data
+export TASK_NAME=MRPC
+export OUT_DIR=./$TASK_NAME/
+python ./run_glue.py \
+    --model_type bert \
+    --model_name_or_path bert-base-uncased \
+    --task_name $TASK_NAME \
+    --do_train \
+    --do_eval \
+    --do_lower_case \
+    --data_dir $GLUE_DIR/$TASK_NAME \
+    --max_seq_length 128 \
+    --per_gpu_eval_batch_size=8   \
+    --per_gpu_train_batch_size=8   \
+    --learning_rate 2e-5 \
+    --num_train_epochs 3.0 \
+    --save_steps 100000 \
+    --output_dir $OUT_DIR
+```
+
+We provide the fined-tuned BERT model for MRPC task [here](https://download.pytorch.org/tutorial/bert_mrpc_quantization/bert_mrpc_quantization.zip). To save time, you can download the model file (~400 MB) directly into your local folder $OUT_DIR.
+
+#### 2.1 Set global configurations
+
+Here we set the global configurations for evaluating the fine-tuned BERT model before and after the dynamic quantization.
+
+```python
+configs = Namespace()
+
+# The output directory for the fine-tuned model, $OUT_DIR.
+configs.output_dir = "./MRPC/"
+
+# The data directory for the MRPC task in the GLUE benchmark, $GLUE_DIR/$TASK_NAME.
+configs.data_dir = "./glue_data/MRPC"
+
+# The model name or path for the pre-trained model.
+configs.model_name_or_path = "bert-base-uncased"
+# The maximum length of an input sequence
+configs.max_seq_length = 128
+
+# Prepare GLUE task.
+configs.task_name = "MRPC".lower()
+configs.processor = processors[configs.task_name]()
+configs.output_mode = output_modes[configs.task_name]
+configs.label_list = configs.processor.get_labels()
+configs.model_type = "bert".lower()
+configs.do_lower_case = True
+
+# Set the device, batch size, topology, and caching flags.
+configs.device = "cpu"
+configs.per_gpu_eval_batch_size = 8
+configs.n_gpu = 0
+configs.local_rank = -1
+configs.overwrite_cache = False
+
+# Set random seed for reproducibility.
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+set_seed(42)
+```
+
+#### 2.2 Load the fine-tuned BERT model
+
+We load the tokenizer and fine-tuned BERT sequence classifier model (FP32) from the configs.output_dir.
+
+```python
+tokenizer = BertTokenizer.from_pretrained(
+    configs.output_dir, do_lower_case=configs.do_lower_case)
+
+model = BertForSequenceClassification.from_pretrained(configs.output_dir)
+model.to(configs.device)
+```
+
+#### 2.3 Define the tokenize and evaluation function
+
+We reuse the tokenize and evaluation function from Huggingface.
+
+```python
+def evaluate(args, model, tokenizer, prefix=""):
+    # Loop to handle MNLI double evaluation (matched, mis-matched)
+    eval_task_names = ("mnli", "mnli-mm") if args.task_name == "mnli" else (args.task_name,)
+    eval_outputs_dirs = (args.output_dir, args.output_dir + '-MM') if args.task_name == "mnli" else (args.output_dir,)
+
+    results = {}
+    for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
+        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
+
+        if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
+            os.makedirs(eval_output_dir)
+
+        args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        # Note that DistributedSampler samples randomly
+        eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
+        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+
+        # multi-gpu eval
+        if args.n_gpu > 1:
+            model = torch.nn.DataParallel(model)
+
+        # Eval!
+        logger.info("***** Running evaluation {} *****".format(prefix))
+        logger.info("  Num examples = %d", len(eval_dataset))
+        logger.info("  Batch size = %d", args.eval_batch_size)
+        eval_loss = 0.0
+        nb_eval_steps = 0
+        preds = None
+        out_label_ids = None
+        for batch in tqdm(eval_dataloader, desc="Evaluating"):
+            model.eval()
+            batch = tuple(t.to(args.device) for t in batch)
+
+            with torch.no_grad():
+                inputs = {'input_ids':      batch[0],
+                          'attention_mask': batch[1],
+                          'labels':         batch[3]}
+                if args.model_type != 'distilbert':
+                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+                outputs = model(**inputs)
+                tmp_eval_loss, logits = outputs[:2]
+
+                eval_loss += tmp_eval_loss.mean().item()
+            nb_eval_steps += 1
+            if preds is None:
+                preds = logits.detach().cpu().numpy()
+                out_label_ids = inputs['labels'].detach().cpu().numpy()
+            else:
+                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+
+        eval_loss = eval_loss / nb_eval_steps
+        if args.output_mode == "classification":
+            preds = np.argmax(preds, axis=1)
+        elif args.output_mode == "regression":
+            preds = np.squeeze(preds)
+        result = compute_metrics(eval_task, preds, out_label_ids)
+        results.update(result)
+
+        output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
+        with open(output_eval_file, "w") as writer:
+            logger.info("***** Eval results {} *****".format(prefix))
+            for key in sorted(result.keys()):
+                logger.info("  %s = %s", key, str(result[key]))
+                writer.write("%s = %s\n" % (key, str(result[key])))
+
+    return results
+
+def load_and_cache_examples(args, task, tokenizer, evaluate=False):
+    if args.local_rank not in [-1, 0] and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
+
+    processor = processors[task]()
+    output_mode = output_modes[task]
+    # Load data features from cache or dataset file
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
+        'dev' if evaluate else 'train',
+        list(filter(None, args.model_name_or_path.split('/'))).pop(),
+        str(args.max_seq_length),
+        str(task)))
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        logger.info("Loading features from cached file %s", cached_features_file)
+        features = torch.load(cached_features_file)
+    else:
+        logger.info("Creating features from dataset file at %s", args.data_dir)
+        label_list = processor.get_labels()
+        if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
+            # HACK(label indices are swapped in RoBERTa pretrained model)
+            label_list[1], label_list[2] = label_list[2], label_list[1]
+        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
+        features = convert_examples_to_features(examples,
+                                                tokenizer,
+                                                label_list=label_list,
+                                                max_length=args.max_seq_length,
+                                                output_mode=output_mode,
+                                                pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
+                                                pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
+        )
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving features into cached file %s", cached_features_file)
+            torch.save(features, cached_features_file)
+
+    if args.local_rank == 0 and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
+
+    # Convert to Tensors and build dataset
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+    if output_mode == "classification":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    elif output_mode == "regression":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
+
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    return dataset
+```
+
+### 3. Apply the dynamic quantization
+
+We call torch.quantization.quantize_dynamic on the model to apply the dynamic quantization on the HuggingFace BERT model. Specifically,
+
+- We specify that we want the torch.nn.Linear modules in our model to be quantized;
+- We specify that we want weights to be converted to quantized int8 values.
+
+```python
+quantized_model = torch.quantization.quantize_dynamic(
+    model, {torch.nn.Linear}, dtype=torch.qint8
+)
+print(quantized_model)
+```
+
+#### 3.1 Check the model size
+
+Let’s first check the model size. We can observe a significant reduction in model size (FP32 total size: 438 MB; INT8 total size: 181 MB):
+
+```python
+def print_size_of_model(model):
+    torch.save(model.state_dict(), "temp.p")
+    print('Size (MB):', os.path.getsize("temp.p")/1e6)
+    os.remove('temp.p')
+
+print_size_of_model(model)
+print_size_of_model(quantized_model)
+```
+
+The BERT model used in this tutorial (bert-base-uncased) has a vocabulary size V of 30522. With the embedding size of 768, the total size of the word embedding table is ~ 4 (Bytes/FP32) * 30522 * 768 = 90 MB. So with the help of quantization, the model size of the non-embedding table part is reduced from 350 MB (FP32 model) to 90 MB (INT8 model).
+
+#### 3.2 Evaluate the inference accuracy and time
+
+Next, let’s compare the inference time as well as the evaluation accuracy between the original FP32 model and the INT8 model after the dynamic quantization.
+
+```python
+def time_model_evaluation(model, configs, tokenizer):
+    eval_start_time = time.time()
+    result = evaluate(configs, model, tokenizer, prefix="")
+    eval_end_time = time.time()
+    eval_duration_time = eval_end_time - eval_start_time
+    print(result)
+    print("Evaluate total time (seconds): {0:.1f}".format(eval_duration_time))
+
+# Evaluate the original FP32 BERT model
+time_model_evaluation(model, configs, tokenizer)
+
+# Evaluate the INT8 BERT model after the dynamic quantization
+time_model_evaluation(quantized_model, configs, tokenizer)
+```
+
+Running this locally on a MacBook Pro, without quantization, inference (for all 408 examples in MRPC dataset) takes about 160 seconds, and with quantization it takes just about 90 seconds. We summarize the results for running the quantized BERT model inference on a Macbook Pro as the follows:
+
+| Prec | F1 score | Model Size | 1 thread | 4 threads |
+|------|----------|------------|----------|-----------|
+| FP32 |  0.9019  |   438 MB   | 160 sec  | 85 sec    |
+| INT8 |  0.902   |   181 MB   |  90 sec  | 46 sec    |
+
+We have 0.6% lower F1 score accuracy after applying the post-training dynamic quantization on the fine-tuned BERT model on the MRPC task. As a comparison, in a recent paper (Table 1), it achieved 0.8788 by applying the post-training dynamic quantization and 0.8956 by applying the quantization-aware training. The main difference is that we support the asymmetric quantization in PyTorch while that paper supports the symmetric quantization only.
+
+Note that we set the number of threads to 1 for the single-thread comparison in this tutorial. We also support the intra-op parallelization for these quantized INT8 operators. The users can now set multi-thread by torch.set_num_threads(N) (N is the number of intra-op parallelization threads). One preliminary requirement to enable the intra-op parallelization support is to build PyTorch with the right backend such as OpenMP, Native or TBB. You can use torch.__config__.parallel_info() to check the parallelization settings. On the same MacBook Pro using PyTorch with Native backend for parallelization, we can get about 46 seconds for processing the evaluation of MRPC dataset.
+
+#### 3.3 Serialize the quantized model
+
+We can serialize and save the quantized model for the future use using torch.jit.save after tracing the model.
+
+```python
+def ids_tensor(shape, vocab_size):
+    #  Creates a random int32 tensor of the shape within the vocab size
+    return torch.randint(0, vocab_size, shape=shape, dtype=torch.int, device='cpu')
+
+input_ids = ids_tensor([8, 128], 2)
+token_type_ids = ids_tensor([8, 128], 2)
+attention_mask = ids_tensor([8, 128], vocab_size=2)
+dummy_input = (input_ids, attention_mask, token_type_ids)
+traced_model = torch.jit.trace(quantized_model, dummy_input)
+torch.jit.save(traced_model, "bert_traced_eager_quant.pt")
+```
+
+To load the quantized model, we can use torch.jit.load
+
+```python
+loaded_quantized_model = torch.jit.load("bert_traced_eager_quant.pt")
+```
+
+### Conclusion
+
+In this tutorial, we demonstrated how to convert a well-known state-of-the-art NLP model like BERT into dynamic quantized model. Dynamic quantization can reduce the size of the model while only having a limited implication on accuracy.
+
+## [FX Graph Mode Quantization User Guide](https://pytorch.org/tutorials/prototype/fx_graph_mode_quant_guide.html)
+
+### Introduction
+
+FX Graph Mode Quantization requires a symbolically traceable model. We use the FX framework to convert a symbolically traceable nn.Module instance to IR, and we operate on the IR to execute the quantization passes. If you have questions about symbolically tracing your model in PyTorch, please post them in the PyTorch Discussion Forum.
+
+Quantization will only work on the symbolically traceable parts of your model. The data dependent control flow-if statements / for loops, and so on using symbolically traced values-are one common pattern which is not supported.
+
+### Options for Non-Traceable Code
+
+#### Non-Traceable Code Doesn't Need to be Quantized
+
+1. **Symbolically trace only the code that needs to be quantized**
+   - When the whole model is not symbolically traceable but the submodule we want to quantize is symbolically traceable, we can run quantization only on that submodule.
+
+   **Before:**
+   ```python
+   class M(nn.Module):
+       def forward(self, x):
+           x = non_traceable_code_1(x)
+           x = traceable_code(x)
+           x = non_traceable_code_2(x)
+           return x
+   ```
+
+   **After:**
+   ```python
+   class FP32Traceable(nn.Module):
+       def forward(self, x):
+           x = traceable_code(x)
+           return x
+
+   class M(nn.Module):
+       def __init__(self):
+           self.traceable_submodule = FP32Traceable(...)
+       def forward(self, x):
+           x = self.traceable_code_1(x)
+           # We'll only symbolic trace/quantize this submodule
+           x = self.traceable_submodule(x)
+           x = self.traceable_code_2(x)
+           return x
+   ```
+
+   **Quantization code:**
+   ```python
+   qconfig_mapping = QConfigMapping().set_global(qconfig)
+   model_fp32.traceable_submodule = prepare_fx(model_fp32.traceable_submodule, qconfig_mapping, example_inputs)
+   ```
+
+   Note: If the original model needs to be preserved, you will have to copy it yourself before calling the quantization APIs.
+
+2. **Skip symbolic tracing the non-traceable code**
+   - When we have some non-traceable code in the module, and this part of code doesn’t need to be quantized, we can factor out this part of the code into a submodule and skip symbolically trace that submodule.
+
+   **Before:**
+   ```python
+   class M(nn.Module):
+       def forward(self, x):
+           x = self.traceable_code_1(x)
+           x = non_traceable_code(x)
+           x = self.traceable_code_2(x)
+           return x
+   ```
+
+   **After:**
+   ```python
+   class FP32NonTraceable(nn.Module):
+       def forward(self, x):
+           x = non_traceable_code(x)
+           return x
+
+   class M(nn.Module):
+       def __init__(self):
+           ...
+           self.non_traceable_submodule = FP32NonTraceable(...)
+
+       def forward(self, x):
+           x = self.traceable_code_1(x)
+           # we will configure the quantization call to not trace through this submodule
+           x = self.non_traceable_submodule(x)
+           x = self.traceable_code_2(x)
+           return x
+   ```
+
+   **Quantization code:**
+   ```python
+   qconfig_mapping = QConfigMapping.set_global(qconfig)
+   prepare_custom_config_dict = {
+       "non_traceable_module_name": "non_traceable_submodule",
+       # or
+       "non_traceable_module_class": [MNonTraceable],
+   }
+   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
+   ```
+
+#### Non-Traceable Code Needs to be Quantized
+
+1. **Refactor your code to make it symbolically traceable**
+   - If it is easy to refactor the code and make the code symbolically traceable, we can refactor the code and remove the use of non-traceable constructs in python.
+
+   **Before:**
+   ```python
+   def transpose_for_scores(self, x):
+       new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+       x = x.view(*new_x_shape)
+       return x.permute(0, 2, 1, 3)
+   ```
+
+   **After:**
+   ```python
+   def transpose_for_scores(self, x):
+       new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+       x = x.view(new_x_shape)
+       return x.permute(0, 2, 1, 3)
+   ```
+
+   This can be combined with other approaches and the quantization code depends on the model.
+
+2. **Write your own observed and quantized submodule**
+   - If the non-traceable code can’t be refactored to be symbolically traceable, for example it has some loops that can’t be eliminated, like nn.LSTM, we’ll need to factor out the non-traceable code to a submodule (we call it CustomModule in fx graph mode quantization) and define the observed and quantized version of the submodule (in post training static quantization or quantization aware training for static quantization) or define the quantized version (in post training dynamic and weight only quantization).
+
+   **Before:**
+   ```python
+   class M(nn.Module):
+       def forward(self, x):
+           x = traceable_code_1(x)
+           x = non_traceable_code(x)
+           x = traceable_code_1(x)
+           return x
+   ```
+
+   **After:**
+   - Factor out non_traceable_code to FP32NonTraceable non-traceable logic, wrapped in a module
+   - Define observed version of FP32NonTraceable
+   - Define statically quantized version of FP32NonTraceable and a class method “from_observed” to convert from ObservedNonTraceable to StaticQuantNonTraceable
+
+   **Quantization code:**
+   - Post training static quantization or quantization aware training (that produces a statically quantized module)
+   ```python
+   prepare_custom_config_dict = {
+       "float_to_observed_custom_module_class": {
+           "static": {
+               FP32NonTraceable: ObservedNonTraceable,
+           }
+       },
+   }
+   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
+   # calibrate / train (not shown)
+   convert_custom_config_dict = {
+       "observed_to_quantized_custom_module_class": {
+           "static": {
+               ObservedNonTraceable: StaticQuantNonTraceable,
+           }
+       },
+   }
+   model_quantized = convert_fx(model_prepared, convert_custom_config_dict)
+   ```
+
+   - Post training dynamic/weight only quantization in these two modes we don’t need to observe the original model, so we only need to define thee quantized model
+   ```python
+   class DynamicQuantNonTraceable: # or WeightOnlyQuantMNonTraceable
+      ...
+      @classmethod
+      def from_observed(cls, ...):
+          ...
+
+   prepare_custom_config_dict = {
+       "non_traceable_module_class": [
+           FP32NonTraceable
+       ]
+   }
+   # The example is for post training quantization
+   model_fp32.eval()
+   model_prepared = prepare_fx(model_fp32, qconfig_mapping, example_inputs, prepare_custom_config_dict=prepare_custom_config_dict)
+   convert_custom_config_dict = {
+       "observed_to_quantized_custom_module_class": {
+           "dynamic": {
+               FP32NonTraceable: DynamicQuantNonTraceable,
+           }
+       },
+   }
+   model_quantized = convert_fx(model_prepared, convert_custom_config_dict)
+   ```
+
+   You can also find examples for custom modules in test test_custom_module_class in torch/test/quantization/test_quantize_fx.py.
+
+## [FX Graph Mode Post Training Static Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html)
+
+This tutorial introduces the steps to perform post training static quantization in graph mode based on torch.fx. The advantage of FX graph mode quantization is that it allows for fully automatic quantization of the model. Although there might be some effort required to make the model compatible with FX Graph Mode Quantization (symbolically traceable with torch.fx), we’ll have a separate tutorial to show how to make the part of the model we want to quantize compatible with FX Graph Mode Quantization. We also have a tutorial for FX Graph Mode Post Training Dynamic Quantization.
+
+The FX Graph Mode API looks like the following:
+
+```python
+import torch
+from torch.ao.quantization import get_default_qconfig
+from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
+from torch.ao.quantization import QConfigMapping
+
+float_model.eval()
+qconfig = get_default_qconfig("x86")
+qconfig_mapping = QConfigMapping().set_global(qconfig)
+
+def calibrate(model, data_loader):
+    model.eval()
+    with torch.no_grad():
+        for image, target in data_loader:
+            model(image)
+
+example_inputs = (next(iter(data_loader))[0])
+prepared_model = prepare_fx(float_model, qconfig_mapping, example_inputs)
+calibrate(prepared_model, data_loader_test)
+quantized_model = convert_fx(prepared_model)
+```
+
+### 1. Motivation of FX Graph Mode Quantization
+
+Currently, PyTorch only has eager mode quantization as an alternative: [Static Quantization with Eager Mode in PyTorch](link-to-eager-mode-tutorial).
+
+We can see there are multiple manual steps involved in the eager mode quantization process, including:
+
+- Explicitly quantizing and dequantizing activations
+- Explicitly fusing modules
+- Special handling for pytorch tensor operations (like add, concat, etc.)
+- Functionals did not have first class support (functional.conv2d and functional.linear would not get quantized)
+
+Most of these required modifications come from the underlying limitations of eager mode quantization. Eager mode works in module level since it cannot inspect the code that is actually run (in the forward function). Quantization is achieved by module swapping, and we don’t know how the modules are used in the forward function in eager mode, so it requires users to insert QuantStub and DeQuantStub manually to mark the points they want to quantize or dequantize.
+
+In graph mode, we can inspect the actual code that’s been executed in the forward function (e.g. aten function calls) and quantization is achieved by module and graph manipulations. Since graph mode has full visibility of the code that is run, our tool is able to automatically figure out things like which modules to fuse and where to insert observer calls, quantize/dequantize functions, etc., we are able to automate the whole quantization process.
+
+Advantages of FX Graph Mode Quantization are:
+
+- Simple quantization flow, minimal manual steps
+- Unlocks the possibility of doing higher level optimizations like automatic precision selection
+
+### 2. Define Helper Functions and Prepare Dataset
+
+We’ll start by doing the necessary imports, defining some helper functions, and preparing the data. These steps are identical to [Static Quantization with Eager Mode in PyTorch](link-to-eager-mode-tutorial).
+
+To run the code in this tutorial using the entire ImageNet dataset, first download imagenet by following the instructions at [ImageNet Data](link-to-imagenet-data). Unzip the downloaded file into the ‘data_path’ folder.
+
+Download the torchvision resnet18 model and rename it to data/resnet18_pretrained_float.pth.
+
+```python
+import os
+import sys
+import time
+import numpy as np
+
+import torch
+from torch.ao.quantization import get_default_qconfig, QConfigMapping
+from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx, fuse_fx
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+import torchvision
+from torchvision import datasets
+from torchvision.models.resnet import resnet18
+import torchvision.transforms as transforms
+
+# ... (other imports and warnings filtering)
+
+# Helper functions and data preparation code here
+```
+
+### 3. Set model to eval mode
+
+For post training quantization, we’ll need to set the model to eval mode.
+
+```python
+model_to_quantize.eval()
+```
+
+### 4. Specify how to quantize the model with QConfigMapping
+
+```python
+qconfig_mapping = QConfigMapping.set_global(default_qconfig)
+```
+
+We use the same qconfig used in eager mode quantization, qconfig is just a named tuple of the observers for activation and weight. QConfigMapping contains mapping information from ops to qconfigs:
+
+```python
+qconfig_mapping = (QConfigMapping()
+    .set_global(qconfig_opt)
+    .set_object_type(torch.nn.Conv2d, qconfig_opt)
+    .set_object_type("reshape", qconfig_opt)
+    .set_module_name_regex("foo.*bar.*conv[0-9]+", qconfig_opt)
+    .set_module_name("foo.bar", qconfig_opt)
+    .set_module_name_object_type_order()
+)
+```
+
+Priority (in increasing order): global, object_type, module_name_regex, module_name
+qconfig == None means fusion and quantization should be skipped for anything matching the rule (unless a higher priority match is found)
+
+Utility functions related to qconfig can be found in the qconfig file while those for QConfigMapping can be found in the [qconfig_mapping](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/qconfig_mapping.py) file.
+
+### 5. Prepare the Model for Post Training Static Quantization
+
+```python
+prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
+```
+
+The `prepare_fx` function folds BatchNorm modules into previous Conv2d modules, and inserts observers in appropriate places in the model.
+
+### 6. Calibration
+
+The calibration function is run after the observers are inserted in the model. The purpose of calibration is to run through some sample examples that are representative of the workload (for example, a sample of the training dataset) so that the observers in the model are able to observe the statistics of the Tensors and we can later use this information to calculate quantization parameters.
+
+```python
+def calibrate(model, data_loader):
+    model.eval()
+    with torch.no_grad():
+        for image, target in data_loader:
+            model(image)
+
+calibrate(prepared_model, data_loader_test)
+```
+
+### 7. Convert the Model to a Quantized Model
+
+```python
+quantized_model = convert_fx(prepared_model)
+```
+
+### 8. Evaluation
+
+We can now print the size and accuracy of the quantized model.
+
+```python
+print("Size of model before quantization")
+print_size_of_model(float_model)
+print("Size of model after quantization")
+print_size_of_model(quantized_model)
+top1, top5 = evaluate(quantized_model, criterion, data_loader_test)
+print("[before serialization] Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
+
+# Save and load the quantized model
+torch.jit.save(torch.jit.script(quantized_model), fx_graph_mode_model_file_path)
+loaded_quantized_model = torch.jit.load(fx_graph_mode_model_file_path)
+
+top1, top5 = evaluate(loaded_quantized_model, criterion, data_loader_test)
+print("[after serialization/deserialization] Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
+```
+
+### 9. Debugging Quantized Model
+
+We can also print the weight for quantized and non-quantized convolution ops to see the difference. First, call `fuse_fx` explicitly to fuse the convolution and batch norm in the model. Note that `fuse_fx` only works in eval mode.
+
+```python
+fused = fuse_fx(float_model)
+
+conv1_weight_after_fuse = fused.conv1[0].weight[0]
+conv1_weight_after_quant = quantized_model.conv1.weight().dequantize()[0]
+
+print(torch.max(abs(conv1_weight_after_fuse - conv1_weight_after_quant)))
+```
+
+### 10. Comparison with Baseline Float Model and Eager Mode Quantization
+
+```python
+print("Size of baseline model")
+print_size_of_model(float_model)
+
+top1, top5 = evaluate(float_model, criterion, data_loader_test)
+print("Baseline Float Model Evaluation accuracy: %2.2f, %2.2f"%(top1.avg, top5.avg))
+torch.jit.save(torch.jit.script(float_model), saved_model_dir + scripted_float_model_file)
+
+print("Size of Fx graph mode quantized model")
+print_size_of_model(quantized_model)
+top1, top5 = evaluate(quantized_model, criterion, data_loader_test)
+print("FX graph mode quantized model Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
+
+from torchvision.models.quantization.resnet import resnet18
+eager_quantized_model = resnet18(pretrained=True, quantize=True).eval()
+print("Size of eager mode quantized model")
+eager_quantized_model = torch.jit.script(eager_quantized_model)
+print_size_of_model(eager_quantized_model)
+top1, top5 = evaluate(eager_quantized_model, criterion, data_loader_test)
+print("eager mode quantized model Evaluation accuracy on test dataset: %2.2f, %2.2f"%(top1.avg, top5.avg))
+torch.jit.save(eager_quantized_model, saved_model_dir + eager_mode_model_file)
+```
+
+We can see that the model size and accuracy of FX graph mode and eager mode quantized model are pretty similar.
+
+Running the model in AIBench (with single threading) gives the following result:
+
+- Scripted Float Model: Self CPU time total: 192.48ms
+- Scripted Eager Mode Quantized Model: Self CPU time total: 50.76ms
+- Scripted FX Graph Mode Quantized Model: Self CPU time total: 50.63ms
+
+As we can see for resnet18, both FX graph mode and eager mode quantized model get similar speedup over the floating point model, which is around 2-4x faster than the floating point model. However, the actual speedup over the floating point model may vary depending on the model, device, build, input batch sizes, threading, etc.
+
+## [FX Graph Mode Post Training Dynamic Quantization](https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_dynamic.html)
+
+This tutorial introduces the steps to do post training dynamic quantization in graph mode based on torch.fx. We have a separate tutorial for FX Graph Mode Post Training Static Quantization. Comparison between FX Graph Mode Quantization and Eager Mode Quantization can be found in the quantization docs.
+
+**TL;DR:** The FX Graph Mode API for dynamic quantization looks like the following:
+
+```python
+import torch
+from torch.ao.quantization import default_dynamic_qconfig, QConfigMapping
+# Note that this is temporary, we'll expose these functions to torch.ao.quantization after official release
+from torch.quantization.quantize_fx import prepare_fx, convert_fx
+
+float_model.eval()
+# The old 'fbgemm' is still available but 'x86' is the recommended default.
+qconfig = get_default_qconfig("x86")
+qconfig_mapping = QConfigMapping().set_global(qconfig)
+prepared_model = prepare_fx(float_model, qconfig_mapping, example_inputs)  # fuse modules and insert observers
+# no calibration is required for dynamic quantization
+quantized_model = convert_fx(prepared_model)  # convert the model to a dynamically quantized model
+```
+
+In this tutorial, we’ll apply dynamic quantization to an LSTM-based next word-prediction model, closely following the word language model from the PyTorch examples. We will copy the code from Dynamic Quantization on an LSTM Word Language Model and omit the descriptions.
+
+### 1. Define the Model, Download Data and Model
+
+Download the data and unzip to data folder:
+
+```bash
+mkdir data
+cd data
+wget https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip
+unzip wikitext-2-v1.zip
+```
+
+Download model to the data folder:
+
+```bash
+wget https://s3.amazonaws.com/pytorch-tutorial-assets/word_language_model_quantize.pth
+```
+
+Define the model:
+
+```python
+# imports
+import os
+from io import open
+import time
+import copy
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# Model Definition
+class LSTMModel(nn.Module):
+    """Container module with an encoder, a recurrent module, and a decoder."""
+
+    def __init__(self, ntoken, ninp, nhid, nlayers, dropout=0.5):
+        super(LSTMModel, self).__init__()
+        self.drop = nn.Dropout(dropout)
+        self.encoder = nn.Embedding(ntoken, ninp)
+        self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout)
+        self.decoder = nn.Linear(nhid, ntoken)
+
+        self.init_weights()
+
+        self.nhid = nhid
+        self.nlayers = nlayers
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, input, hidden):
+        emb = self.drop(self.encoder(input))
+        output, hidden = self.rnn(emb, hidden)
+        output = self.drop(output)
+        decoded = self.decoder(output)
+        return decoded, hidden
+
+def init_hidden(lstm_model, bsz):
+    # get the weight tensor and create hidden layer in the same device
+    weight = lstm_model.encoder.weight
+    # get weight from quantized model
+    if not isinstance(weight, torch.Tensor):
+        weight = weight()
+    device = weight.device
+    nlayers = lstm_model.rnn.num_layers
+    nhid = lstm_model.rnn.hidden_size
+    return (torch.zeros(nlayers, bsz, nhid, device=device),
+            torch.zeros(nlayers, bsz, nhid, device=device))
+
+# Load Text Data
+class Dictionary(object):
+    def __init__(self):
+        self.word2idx = {}
+        self.idx2word = []
+
+    def add_word(self, word):
+        if word not in self.word2idx:
+            self.idx2word.append(word)
+            self.word2idx[word] = len(self.idx2word) - 1
+        return self.word2idx[word]
+
+    def __len__(self):
+        return len(self.idx2word)
+
+class Corpus(object):
+    def __init__(self, path):
+        self.dictionary = Dictionary()
+        self.train = self.tokenize(os.path.join(path, 'wiki.train.tokens'))
+        self.valid = self.tokenize(os.path.join(path, 'wiki.valid.tokens'))
+        self.test = self.tokenize(os.path.join(path, 'wiki.test.tokens'))
+
+    def tokenize(self, path):
+        """Tokenizes a text file."""
+        assert os.path.exists(path)
+        # Add words to the dictionary
+        with open(path, 'r', encoding="utf8") as f:
+            for line in f:
+                words = line.split() + ['<eos>']
+                for word in words:
+                    self.dictionary.add_word(word)
+
+        # Tokenize file content
+        with open(path, 'r', encoding="utf8") as f:
+            idss = []
+            for line in f:
+                words = line.split() + ['<eos>']
+                ids = []
+                for word in words:
+                    ids.append(self.dictionary.word2idx[word])
+                idss.append(torch.tensor(ids).type(torch.int64))
+            ids = torch.cat(idss)
+
+        return ids
+
+model_data_filepath = 'data/'
+
+corpus = Corpus(model_data_filepath + 'wikitext-2')
+
+ntokens = len(corpus.dictionary)
+
+# Load Pretrained Model
+model = LSTMModel(
+    ntoken = ntokens,
+    ninp = 512,
+    nhid = 256,
+    nlayers = 5,
+)
+
+model.load_state_dict(
+    torch.load(
+        model_data_filepath + 'word_language_model_quantize.pth',
+        map_location=torch.device('cpu')
+        )
+    )
+
+model.eval()
+print(model)
+
+bptt = 25
+criterion = nn.CrossEntropyLoss()
+eval_batch_size = 1
+
+# create test data set
+def batchify(data, bsz):
+    # Work out how cleanly we can divide the dataset into bsz parts.
+    nbatch = data.size(0) // bsz
+    # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    data = data.narrow(0, 0, nbatch * bsz)
+    # Evenly divide the data across the bsz batches.
+    return data.view(bsz, -1).t().contiguous()
+
+test_data = batchify(corpus.test, eval_batch_size)
+example_inputs = (next(iter(test_data))[0])
+
+# Evaluation functions
+def get_batch(source, i):
+    seq_len = min(bptt, len(source) - 1 - i)
+    data = source[i:i+seq_len]
+    target = source[i+1:i+1+seq_len].reshape(-1)
+    return data, target
+
+def repackage_hidden(h):
+  """Wraps hidden states in new Tensors, to detach them from their history."""
+
+  if isinstance(h, torch.Tensor):
+      return h.detach()
+  else:
+      return tuple(repackage_hidden(v) for v in h)
+
+def evaluate(model_, data_source):
+    # Turn on evaluation mode which disables dropout.
+    model_.eval()
+    total_loss = 0.
+    hidden = init_hidden(model_, eval_batch_size)
+    with torch.no_grad():
+        for i in range(0, data_source.size(0) - 1, bptt):
+            data, targets = get_batch(data_source, i)
+            output, hidden = model_(data, hidden)
+            hidden = repackage_hidden(hidden)
+            output_flat = output.view(-1, ntokens)
+            total_loss += len(data) * criterion(output_flat, targets).item()
+    return total_loss / (len(data_source) - 1)
+```
+
+### 2. Post Training Dynamic Quantization
+
+Now we can dynamically quantize the model. We can use the same function as post training static quantization but with a dynamic qconfig.
+
+```python
+from torch.quantization.quantize_fx import prepare_fx, convert_fx
+from torch.ao.quantization import default_dynamic_qconfig, float_qparams_weight_only_qconfig, QConfigMapping
+
+# Full docs for supported qconfig for floating point modules/ops can be found in `quantization docs <https://pytorch.org/docs/stable/quantization.html#module-torch.quantization>`_
+# Full docs for `QConfigMapping <https://pytorch.org/docs/stable/generated/torch.ao.quantization.qconfig_mapping.QConfigMapping.html#torch.ao.quantization.qconfig_mapping.QConfigMapping>`_
+qconfig_mapping = (QConfigMapping()
+    .set_object_type(nn.Embedding, float_qparams_weight_only_qconfig)
+    .set_object_type(nn.LSTM, default_dynamic_qconfig)
+    .set_object_type(nn.Linear, default_dynamic_qconfig)
+)
+# Load model to create the original model because quantization api changes the model inplace and we want
+# to keep the original model for future comparison
+
+model_to_quantize = LSTMModel(
+    ntoken = ntokens,
+    ninp = 512,
+    nhid = 256,
+    nlayers = 5,
+)
+
+model_to_quantize.load_state_dict(
+    torch.load(
+        model_data_filepath + 'word_language_model_quantize.pth',
+        map_location=torch.device('cpu')
+        )
+    )
+
+model_to_quantize.eval()
+
+prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
+print("prepared model:", prepared_model)
+quantized_model = convert_fx(prepared_model)
+print("quantized model", quantized_model)
+```
+
+For dynamically quantized objects, we didn’t do anything in prepare_fx for modules, but will insert observers for weight for dynamically quantizable forunctionals and torch ops. We also fuse the modules like Conv + Bn, Linear + ReLU.
+
+In convert we’ll convert the float modules to dynamically quantized modules and convert float ops to dynamically quantized ops. We can see in the example model, nn.Embedding, nn.Linear and nn.LSTM are dynamically quantized.
+
+Now we can compare the size and runtime of the quantized model.
+
+```python
+def print_size_of_model(model):
+    torch.save(model.state_dict(), "temp.p")
+    print('Size (MB):', os.path.getsize("temp.p")/1e6)
+    os.remove('temp.p')
+
+print_size_of_model(model)
+print_size_of_model(quantized_model)
+```
+
+There is a 4x size reduction because we quantized all the weights in the model (nn.Embedding, nn.Linear and nn.LSTM) from float (4 bytes) to quantized int (1 byte).
+
+```python
+torch.set_num_threads(1)
+
+def time_model_evaluation(model, test_data):
+    s = time.time()
+    loss = evaluate(model, test_data)
+    elapsed = time.time() - s
+    print('''loss: {0:.3f}\nelapsed time (seconds): {1:.1f}'''.format(loss, elapsed))
+
+time_model_evaluation(model, test_data)
+time_model_evaluation(quantized_model, test_data)
+```
+
+There is a roughly 2x speedup for this model. Also note that the speedup may vary depending on model, device, build, input batch sizes, threading etc.
+
+### 3. Conclusion
+
+This tutorial introduces the api for post training dynamic quantization in FX Graph Mode, which dynamically quantizes the same modules as Eager Mode Quantization.
+
+## [Static Quantization with Eager Mode in PyTorch](https://pytorch.org/tutorials/advanced/static_quantization_tutorial.html)
+
+This tutorial shows how to do post-training static quantization, as well as illustrating two more advanced techniques - per-channel quantization and quantization-aware training - to further improve the model’s accuracy. Note that quantization is currently only supported for CPUs, so we will not be utilizing GPUs / CUDA in this tutorial. By the end of this tutorial, you will see how quantization in PyTorch can result in significant decreases in model size while increasing speed. Furthermore, you’ll see how to easily apply some advanced quantization techniques shown here so that your quantized models take much less of an accuracy hit than they would otherwise.
+
+Warning: we use a lot of boilerplate code from other PyTorch repos to, for example, define the MobileNetV2 model architecture, define data loaders, and so on. We of course encourage you to read it; but if you want to get to the quantization features, feel free to skip to the “4. Post-training static quantization” section.
+
+### 1. Model architecture
+
+We first define the MobileNetV2 model architecture, with several notable modifications to enable quantization:
+
+- Replacing addition with `nn.quantized.FloatFunctional`
+- Insert `QuantStub` and `DeQuantStub` at the beginning and end of the network.
+- Replace ReLU6 with ReLU
+
+Note: this code is taken from [here](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/mobilenet_example.py).
+
+### 2. Helper functions
+
+We next define several helper functions to help with model evaluation. These mostly come from [here](https://github.com/pytorch/pytorch/blob/master/torch/ao/quantization/fx/mobilenet_example.py).
+
+### 3. Define dataset and data loaders
+
+As our last major setup step, we define our dataloaders for our training and testing set.
+
+### 4. Post-training static quantization
+
+Post-training static quantization involves not just converting the weights from float to int, as in dynamic quantization, but also performing the additional step of first feeding batches of data through the network and computing the resulting distributions of the different activations (specifically, this is done by inserting observer modules at different points that record this data). These distributions are then used to determine how the specifically the different activations should be quantized at inference time (a simple technique would be to simply divide the entire range of activations into 256 levels, but we support more sophisticated methods as well). Importantly, this additional step allows us to pass quantized values between operations instead of converting these values to floats - and then back to ints - between every operation, resulting in a significant speed-up.
+
+### 5. Quantization-aware training
+
+Quantization-aware training (QAT) is the quantization method that typically results in the highest accuracy. With QAT, all weights and activations are “fake quantized” during both the forward and backward passes of training: that is, float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all the weight adjustments during training are made while “aware” of the fact that the model will ultimately be quantized; after quantizing, therefore, this method will usually yield higher accuracy than either dynamic quantization or post-training static quantization.
+
+The overall workflow for actually performing QAT is very similar to before:
+
+- We can use the same model as before: there is no additional preparation needed for quantization-aware training.
+- We need to use a qconfig specifying what kind of fake-quantization is to be inserted after weights and activations, instead of specifying observers
+- We first define a training function:
+- We fuse modules as before
+- Finally, `prepare_qat` performs the “fake quantization”, preparing the model for quantization-aware training
+
+### Speedup from quantization
+
+Finally, let’s confirm something we alluded to above: do our quantized models actually perform inference faster? Let’s test:
+
+```python
+def run_benchmark(model_file, img_loader):
+    elapsed = 0
+    model = torch.jit.load(model_file)
+    model.eval()
+    num_batches = 5
+    # Run the scripted model on a few batches of images
+    for i, (images, target) in enumerate(img_loader):
+        if i < num_batches:
+            start = time.time()
+            output = model(images)
+            end = time.time()
+            elapsed = elapsed + (end-start)
+        else:
+            break
+    num_images = images.size()[0] * num_batches
+
+    print('Elapsed time: %3.0f ms' % (elapsed/num_images*1000))
+    return elapsed
+
+run_benchmark(saved_model_dir + scripted_float_model_file, data_loader_test)
+
+run_benchmark(saved_model_dir + scripted_quantized_model_file, data_loader_test)
+```
+
+Running this locally on a MacBook pro yielded 61 ms for the regular model, and just 20 ms for the quantized model, illustrating the typical 2-4x speedup we see for quantized models compared to floating point ones.
+
+### Conclusion
+
+In this tutorial, we showed two quantization methods - post-training static quantization, and quantization-aware training - describing what they do “under the hood” and how to use them in PyTorch.
+
+Thanks for reading! As always, we welcome any feedback, so please create an issue [here](https://github.com/pytorch/pytorch/issues) if you have any.
+
+## [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html)
 
 This tutorial introduces the steps to do post training static quantization in graph mode based on torch._export.export. Compared to FX Graph Mode Quantization, this flow is expected to have significantly higher model coverage (88% on 14K models), better programmability, and a simplified UX.
 
@@ -2673,7 +2728,7 @@ The model produced at this point is not the final model that runs on the device,
 
 In this tutorial, we went through the overall quantization flow in PyTorch 2 Export Quantization using XNNPACKQuantizer and got a quantized model that could be further lowered to a backend that supports inference with XNNPACK backend. To use this for your own backend, please first follow the tutorial and implement a Quantizer for your backend, and then quantize the model with that Quantizer.
 
-## ✅ [PyTorch 2 Export Quantization-Aware Training (QAT)](https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html)
+## [PyTorch 2 Export Quantization-Aware Training (QAT)](https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html)
 
 This tutorial shows how to perform quantization-aware training (QAT) in graph mode based on `torch.export.export`. For more details about PyTorch 2 Export Quantization in general, refer to the post training quantization tutorial.
 
@@ -2858,57 +2913,4 @@ print('Final evaluation accuracy on %d images, %2.2f' % (num_eval_batches * eval
 
 In this tutorial, we demonstrated how to run Quantization-Aware Training (QAT) flow in PyTorch 2 Export Quantization. After convert, the rest of the flow is the same as Post-Training Quantization (PTQ); the user can serialize/deserialize the model and further lower it to a backend that supports inference with XNNPACK backend. For more detail, follow the PTQ tutorial.
 
-## ✅ [PyTorch BackendConfig](https://pytorch.org/tutorials/prototype/backend_config_tutorial.html?highlight=backend)
-
-
-The BackendConfig API enables developers to integrate their backends with PyTorch quantization. It is currently only supported in FX graph mode quantization, but support may be extended to other modes of quantization in the future. In this tutorial, we will demonstrate how to use this API to customize quantization support for specific backends. For more information on the motivation and implementation details behind BackendConfig, please refer to [this README](README.md).
-
-### 1. Derive reference pattern for each quantized operator
-
-Suppose we are a backend developer and we wish to integrate our backend with PyTorch’s quantization APIs. Our backend consists of two ops only: quantized linear and quantized conv-relu. In this section, we will walk through how to achieve this by quantizing an example model using a custom BackendConfig through prepare_fx and convert_fx.
-
-For quantized linear, suppose our backend expects the reference pattern [dequant - fp32_linear - quant] and lowers it into a single quantized linear op. The way to achieve this is to first insert quant-dequant ops before and after the float linear op, such that we produce the following reference model:
-
-quant1 - [dequant1 - fp32_linear - quant2] - dequant2
-
-Similarly, for quantized conv-relu, we wish to produce the following reference model, where the reference pattern in the square brackets will be lowered into a single quantized conv-relu op:
-
-quant1 - [dequant1 - fp32_conv_relu - quant2] - dequant2
-
-### 2. Set DTypeConfigs with backend constraints
-
-In the reference patterns above, the input dtype specified in the DTypeConfig will be passed as the dtype argument to quant1, while the output dtype will be passed as the dtype argument to quant2. If the output dtype is fp32, as in the case of dynamic quantization, then the output quant-dequant pair will not be inserted. This example also shows how to specify restrictions on quantization and scale ranges on a particular dtype.
-
-### 3. Set up fusion for conv-relu
-
-Note that the original user model contains separate conv and relu ops, so we need to first fuse the conv and relu ops into a single conv-relu op (fp32_conv_relu), and then quantize this op similar to how the linear op is quantized. We can set up fusion by defining a function that accepts 3 arguments, where the first is whether or not this is for QAT, and the remaining arguments refer to the individual items of the fused pattern.
-
-### 4. Define the BackendConfig
-
-Now we have all the necessary pieces, so we go ahead and define our BackendConfig. Here we use different observers (will be renamed) for the input and output for the linear op, so the quantization params passed to the two quantize ops (quant1 and quant2) will be different. This is commonly the case for weighted ops like linear and conv.
-
-For the conv-relu op, the observation type is the same. However, we need two BackendPatternConfigs to support this op, one for fusion and one for quantization. For both conv-relu and linear, we use the DTypeConfig defined above.
-
-### 5. Set up QConfigMapping that satisfies the backend constraints
-
-In order to use the ops defined above, the user must define a QConfig that satisfies the constraints specified in the DTypeConfig. For more detail, see the documentation for DTypeConfig. We will then use this QConfig for all the modules used in the patterns we wish to quantize.
-
-### 6. Quantize the model through prepare and convert
-
-Finally, we quantize the model by passing the BackendConfig we defined into prepare and convert. This produces a quantized linear module and a fused quantized conv-relu module.
-
-### 7. Experiment with faulty BackendConfig setups
-
-As an experiment, here we modify the model to use conv-bn-relu instead of conv-relu, but use the same BackendConfig, which doesn’t know how to quantize conv-bn-relu. As a result, only linear is quantized, but conv-bn-relu is neither fused nor quantized.
-
-### Built-in BackendConfigs
-
-PyTorch quantization supports a few built-in native BackendConfigs under the torch.ao.quantization.backend_config namespace:
-
-- get_fbgemm_backend_config: for server target settings
-- get_qnnpack_backend_config: for mobile and edge device target settings, also supports XNNPACK quantized ops
-- get_native_backend_config (default): a BackendConfig that supports a union of the operator patterns supported in the FBGEMM and QNNPACK BackendConfigs
-
-There are also other BackendConfigs under development (e.g. for TensorRT and x86), but these are still mostly experimental at the moment. If the user wishes to integrate a new, custom backend with PyTorch’s quantization API, they may define their own BackendConfigs using the same set of APIs used to define the natively supported ones as in the example above.
-
-## ✅ [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
+## [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
