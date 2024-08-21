@@ -3328,4 +3328,4 @@ In this tutorial, we demonstrated how to run Quantization-Aware Training (QAT) f
 
 ## [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
 
--- FX Graph Mode Post Training Static Quantization
+--FX Graph Mode Post Training Static Quantization

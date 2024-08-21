@@ -68,3 +68,7 @@ pytest
 
 # Deploy
 tritonclient
+
+# Others
+graphviz
+torchviz
