@@ -1,12 +1,12 @@
 import os
 import time
-from typing import Dict, Any, List, Union, Optional, Tuple, Callable
+from typing import Dict, Any, List, Union, Optional, Tuple, Callable, Type
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from contextlib import contextmanager
 from loguru import logger
 
 import yaml
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.ao.quantization as tq
@@ -23,9 +23,10 @@ from torch.ao.quantization.qconfig import (
 )
 from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
+
 from torch._export import capture_pre_autograd_graph, dynamic_dim
 
-""" Example config.yaml
+"""
 quantization:
   backend: 'x86'
   device: 'cpu'
@@ -34,17 +35,22 @@ quantization:
   evaluation_batches: 20
 
 model:
-  input_shape: [1, 28, 28]  # Single channel for black and white images
+  input_shape: [1, 28, 28]  # [channels, height, width]
 
 data:
   batch_size: 32
-  num_samples: 1000  # Total number of samples to generate
+  num_samples: 10000  # Total number of samples to generate
 
 logging:
   level: 'INFO'
   output_file: 'quantization.log'
-"""
 
+training:
+  learning_rate: 0.001
+  num_epochs: 5
+
+save_path: 'quantized_model.pth'
+"""
 
 @dataclass
 class Config:
@@ -58,32 +64,42 @@ class Config:
     num_samples: int
     log_level: str
     log_file: str
+    learning_rate: float
+    num_epochs: int
+    save_path: str
 
     @classmethod
     def from_yaml(cls, yaml_file: str) -> 'Config':
         with open(yaml_file, 'r') as f:
             data = yaml.safe_load(f)
-        return cls(**data['quantization'], **data['model'], **data['data'], **data['logging'])
+        return cls(**data['quantization'], **data['model'], **data['data'], **data['logging'], **data['training'])
+
+class ConfigValidationError(Exception):
+    pass
 
 class ConfigValidator:
     @staticmethod
     def validate(config: Config) -> None:
         if config.backend not in ['x86', 'fbgemm', 'qnnpack']:
-            raise ValueError(f"Unsupported backend: {config.backend}")
+            raise ConfigValidationError(f"Unsupported backend: {config.backend}")
         if config.device not in ['cpu', 'cuda']:
-            raise ValueError(f"Unsupported device: {config.device}")
+            raise ConfigValidationError(f"Unsupported device: {config.device}")
         if config.method not in ['static', 'dynamic', 'qat', 'pt2e_static', 'pt2e_qat']:
-            raise ValueError(f"Unsupported quantization method: {config.method}")
+            raise ConfigValidationError(f"Unsupported quantization method: {config.method}")
         if config.calibration_batches <= 0:
-            raise ValueError("calibration_batches must be positive")
+            raise ConfigValidationError("calibration_batches must be positive")
         if config.evaluation_batches <= 0:
-            raise ValueError("evaluation_batches must be positive")
+            raise ConfigValidationError("evaluation_batches must be positive")
         if len(config.input_shape) != 3:
-            raise ValueError("input_shape must have 3 dimensions")
+            raise ConfigValidationError("input_shape must have 3 dimensions")
         if config.batch_size <= 0:
-            raise ValueError("batch_size must be positive")
+            raise ConfigValidationError("batch_size must be positive")
         if config.num_samples <= 0:
-            raise ValueError("num_samples must be positive")
+            raise ConfigValidationError("num_samples must be positive")
+        if config.learning_rate <= 0:
+            raise ConfigValidationError("learning_rate must be positive")
+        if config.num_epochs <= 0:
+            raise ConfigValidationError("num_epochs must be positive")
 
 class QuantizationError(Exception):
     """Base class for quantization-related errors."""
@@ -217,6 +233,38 @@ class NumericSuite:
                 plt.tight_layout()
                 plt.show()
 
+    @staticmethod
+    def compare_activation_distributions(float_model: nn.Module, quantized_model: nn.Module, inputs: Any) -> Dict[str, Dict[str, np.ndarray]]:
+        float_activations = NumericSuite.get_activation_values(float_model, inputs)
+        quant_activations = NumericSuite.get_activation_values(quantized_model, inputs)
+        
+        results = {}
+        for name in float_activations.keys():
+            if name in quant_activations:
+                results[name] = {
+                    'float_mean': np.mean(float_activations[name]),
+                    'float_std': np.std(float_activations[name]),
+                    'quant_mean': np.mean(quant_activations[name]),
+                    'quant_std': np.std(quant_activations[name]),
+                }
+        return results
+
+    @staticmethod
+    def get_activation_values(model: nn.Module, inputs: Any) -> Dict[str, np.ndarray]:
+        activations = {}
+        def hook_fn(name):
+            def fn(_, __, output):
+                activations[name] = output.detach().cpu().numpy()
+            return fn
+
+        for name, module in model.named_modules():
+            module.register_forward_hook(hook_fn(name))
+
+        with torch.no_grad():
+            model(inputs)
+
+        return activations
+
 class ModelEvaluator:
     @staticmethod
     def print_model_size(model: nn.Module, label: str = "") -> int:
@@ -251,7 +299,7 @@ class ModelEvaluator:
                 torch.cuda.synchronize()
                 starter.record()
             else:
-                start = torch.backends.mkldnn.time.time()
+                start = time.time()
             
             with torch.no_grad():
                 for _ in range(n_iter):
@@ -262,7 +310,7 @@ class ModelEvaluator:
                 torch.cuda.synchronize()
                 elapsed_time = starter.elapsed_time(ender) / 1000  # convert to seconds
             else:
-                elapsed_time = torch.backends.mkldnn.time.time() - start
+                elapsed_time = time.time() - start
             
             return elapsed_time / n_iter
 
@@ -314,7 +362,7 @@ class ModelEvaluator:
     def compare_accuracy_on_dataset(
         fp32_model: nn.Module,
         int8_model: nn.Module,
-        dataloader: td.DataLoader,
+        dataloader: DataLoader,
         device: str
     ) -> Dict[str, float]:
         fp32_model.eval()
@@ -385,7 +433,6 @@ class ModelEvaluator:
 
     @staticmethod
     def profile_quantization(model: nn.Module, example_inputs: Any, quantization_method: 'QuantizationMethod') -> Dict[str, Any]:
-        import time
         start_time = time.time()
         quantized_model = quantization_method.quantize(model, example_inputs)
         end_time = time.time()
@@ -415,7 +462,7 @@ class ModelEvaluator:
     
     @staticmethod
     def _compare_architectures(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
-        def get_architecture_string(model):
+        def get_architecture_string(model: nn.Module) -> str:
             return str(model)
         
         arch1 = get_architecture_string(model1)
@@ -594,9 +641,38 @@ class Quantizer:
                 setattr(model, name, self.handle_non_traceable(module))
         return model
 
-    def determine_best_quantization_method(self, model: nn.Module, example_inputs: Any) -> str:
+    def determine_best_quantization_method(self, model: nn.Module, example_inputs: Any, comparison_results: Dict[str, Dict[str, Any]]) -> str:
         logger.info("Determining the best quantization method")
-        # This is a simple heuristic and can be expanded based on more complex analysis
+        
+        if not comparison_results:
+            logger.warning("No comparison results available. Falling back to heuristic-based selection.")
+            return self._heuristic_based_selection(model)
+        
+        # Define weights for each metric (can be adjusted based on priorities)
+        weights = {
+            'size_reduction': 0.3,
+            'latency_speedup': 0.3,
+            'accuracy_preservation': 0.4
+        }
+        
+        scores = {}
+        for method, results in comparison_results.items():
+            size_reduction = results['size_reduction']
+            latency_speedup = results['latency']['fp32_latency'] / results['latency']['int8_latency']
+            accuracy_preservation = 1 - results['accuracy']['relative_difference']
+            
+            score = (
+                weights['size_reduction'] * size_reduction +
+                weights['latency_speedup'] * latency_speedup +
+                weights['accuracy_preservation'] * accuracy_preservation
+            )
+            scores[method] = score
+        
+        best_method = max(scores, key=scores.get)
+        logger.info(f"Best quantization method determined: {best_method}")
+        return best_method
+
+    def _heuristic_based_selection(self, model: nn.Module) -> str:
         if any(isinstance(m, (nn.LSTM, nn.GRU)) for m in model.modules()):
             return 'dynamic'
         elif any(isinstance(m, nn.Conv2d) for m in model.modules()):
@@ -674,6 +750,7 @@ class QuantizationWrapper:
         logger.add(config.log_file, level=config.log_level)
         self.backend_manager = BackendManager(config.backend)
         self.quantizer = Quantizer(self.backend_manager, config.backend)
+        self.model_evaluator = ModelEvaluator()
 
     def quantize_and_evaluate(
         self,
@@ -687,48 +764,43 @@ class QuantizationWrapper:
         logger.info(f"Starting {quantization_type} quantization")
         
         try:
-            model = self.quantizer.handle_non_traceable(model)
-            self.quantizer.update_qconfig_mapping(model)
-            model = self.quantizer.auto_fuse_modules(model)
+            model = self._prepare_model(model)
+            quantized_model = self._quantize_model(model, example_inputs, quantization_type, train_function)
             
-            quantization_method = QuantizationMethodFactory.create(
-                quantization_type, 
-                self.quantizer, 
-                train_function
-            )
-            quantized_model = quantization_method.quantize(model, example_inputs)
-
             if calibration_data:
-                self.quantizer.calibrate(quantized_model, calibration_data)
+                self._calibrate_model(quantized_model, calibration_data)
 
-            metrics = ModelEvaluator.evaluate_model(
-                model, 
-                quantized_model, 
-                example_inputs, 
-                self.config.device, 
-                eval_function
-            )
+            metrics = self._evaluate_model(model, quantized_model, example_inputs, eval_function)
 
             return quantized_model, metrics
         except Exception as e:
             logger.error(f"Error during quantization and evaluation: {str(e)}")
             raise
 
-    def save_quantized_model(self, model: nn.Module, path: str) -> None:
-        logger.info(f"Saving quantized model to {path}")
-        try:
-            torch.jit.save(torch.jit.script(model), path)
-        except Exception as e:
-            logger.error(f"Failed to save quantized model: {str(e)}")
-            raise
+    def _prepare_model(self, model: nn.Module) -> nn.Module:
+        model = self.quantizer.handle_non_traceable(model)
+        self.quantizer.update_qconfig_mapping(model)
+        return self.quantizer.auto_fuse_modules(model)
 
-    def load_quantized_model(self, path: str) -> nn.Module:
-        logger.info(f"Loading quantized model from {path}")
-        try:
-            return torch.jit.load(path)
-        except Exception as e:
-            logger.error(f"Failed to load quantized model: {str(e)}")
-            raise
+    def _quantize_model(self, model: nn.Module, example_inputs: Any, quantization_type: str, train_function: Optional[Callable]) -> nn.Module:
+        quantization_method = QuantizationMethodFactory.create(
+            quantization_type, 
+            self.quantizer, 
+            train_function
+        )
+        return quantization_method.quantize(model, example_inputs)
+
+    def _calibrate_model(self, model: nn.Module, calibration_data: Any) -> None:
+        self.quantizer.calibrate(model, calibration_data)
+
+    def _evaluate_model(self, original_model: nn.Module, quantized_model: nn.Module, example_inputs: Any, eval_function: Optional[Callable]) -> Dict[str, Any]:
+        return self.model_evaluator.evaluate_model(
+            original_model, 
+            quantized_model, 
+            example_inputs, 
+            self.config.device, 
+            eval_function
+        )
 
     def compare_quantization_methods(
         self, 
@@ -741,9 +813,39 @@ class QuantizationWrapper:
         for method in methods:
             quantization_method = QuantizationMethodFactory.create(method, self.quantizer, train_function)
             quantized_model = quantization_method.quantize(model, example_inputs)
-            metrics = ModelEvaluator.evaluate_model(model, quantized_model, example_inputs, self.config.device)
+            metrics = self.model_evaluator.evaluate_model(model, quantized_model, example_inputs, self.config.device)
             results[method] = metrics
         return results
+
+    def visualize_comparison_results(self, results: Dict[str, Dict[str, Any]]) -> None:
+        import matplotlib.pyplot as plt
+
+        methods = list(results.keys())
+        size_reductions = [results[method]['size_reduction'] for method in methods]
+        latency_speedups = [results[method]['latency']['fp32_latency'] / results[method]['latency']['int8_latency'] for method in methods]
+        accuracy_diffs = [results[method]['accuracy']['relative_difference'] for method in methods]
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 15))
+
+        ax1.bar(methods, size_reductions)
+        ax1.set_ylabel('Size Reduction Factor')
+        ax1.set_title('Model Size Reduction')
+
+        ax2.bar(methods, latency_speedups)
+        ax2.set_ylabel('Latency Speedup Factor')
+        ax2.set_title('Model Latency Speedup')
+
+        ax3.bar(methods, accuracy_diffs)
+        ax3.set_ylabel('Relative Accuracy Difference')
+        ax3.set_title('Model Accuracy Difference')
+
+        plt.tight_layout()
+        plt.show()
+
+    def auto_select_best_method(self, results: Dict[str, Dict[str, Any]]) -> str:
+        best_method = max(results, key=lambda x: results[x]['size_reduction'] * results[x]['latency']['fp32_latency'] / results[x]['latency']['int8_latency'] / (1 + results[x]['accuracy']['relative_difference']))
+        logger.info(f"Automatically selected best method: {best_method}")
+        return best_method
 
 class SimpleCNN(nn.Module):
     def __init__(self, input_shape: List[int]):
@@ -758,7 +860,7 @@ class SimpleCNN(nn.Module):
         self.fc = nn.Linear(32 * (input_shape[1] // 4) * (input_shape[2] // 4), 1)
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.pool1(self.relu1(self.conv1(x)))
         x = self.pool2(self.relu2(self.conv2(x)))
         x = self.flatten(x)
@@ -770,25 +872,32 @@ def create_binary_dataset(config: Config) -> Tuple[TensorDataset, TensorDataset]
     train_samples = int(0.8 * total_samples)  # 80% for training
     test_samples = total_samples - train_samples
 
-    # Create training data
-    train_images = torch.randint(0, 2, (train_samples, *config.input_shape), dtype=torch.float32)
-    train_labels = (train_images.view(train_samples, -1).sum(dim=1) > (train_images[0].numel() // 2)).float()
+    def create_data(num_samples: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        images = torch.randint(0, 2, (num_samples, *config.input_shape), dtype=torch.float32)
+        labels = (images.view(num_samples, -1).sum(dim=1) > (images[0].numel() // 2)).float()
+        return images, labels
 
-    # Create test data
-    test_images = torch.randint(0, 2, (test_samples, *config.input_shape), dtype=torch.float32)
-    test_labels = (test_images.view(test_samples, -1).sum(dim=1) > (test_images[0].numel() // 2)).float()
+    train_images, train_labels = create_data(train_samples)
+    test_images, test_labels = create_data(test_samples)
 
-    train_dataset = TensorDataset(train_images, train_labels)
-    test_dataset = TensorDataset(test_images, test_labels)
+    return TensorDataset(train_images, train_labels), TensorDataset(test_images, test_labels)
 
-    return train_dataset, test_dataset
+class ModelSaver:
+    @staticmethod
+    def save_model(model: nn.Module, path: str, use_jit: bool = True) -> None:
+        if use_jit:
+            torch.jit.save(torch.jit.script(model), path)
+        else:
+            torch.save(model.state_dict(), path)
 
-@contextmanager
-def timer(name: str):
-    start_time = time.time()
-    yield
-    end_time = time.time()
-    logger.info(f"{name} took {end_time - start_time:.2f} seconds")
+    @staticmethod
+    def load_model(path: str, model_class: Type[nn.Module], use_jit: bool = True) -> nn.Module:
+        if use_jit:
+            return torch.jit.load(path)
+        else:
+            model = model_class()
+            model.load_state_dict(torch.load(path))
+            return model
 
 def main():
     # Load configuration
@@ -803,23 +912,18 @@ def main():
 
     # Create datasets
     train_dataset, test_dataset = create_binary_dataset(config)
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, num_workers=4)
 
     # Get example inputs
     example_inputs, _ = next(iter(train_loader))
 
-    # Determine best quantization method
-    with timer("Determine best quantization method"):
-        best_method = qw.quantizer.determine_best_quantization_method(model, example_inputs)
-    logger.info(f"Best quantization method: {best_method}")
-
     # Define a simple training function for QAT
     def train_function(model: nn.Module):
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         criterion = nn.BCELoss()
         model.train()
-        for epoch in range(5):  # Just a few epochs for demonstration
+        for epoch in range(config.num_epochs):
             for inputs, labels in train_loader:
                 optimizer.zero_grad()
                 outputs = model(inputs)
@@ -829,34 +933,38 @@ def main():
 
     # Compare different quantization methods
     methods_to_compare = ['static', 'dynamic', 'qat', 'pt2e_static', 'pt2e_qat']
-    with timer("Compare quantization methods"):
-        comparison_results = qw.compare_quantization_methods(model, example_inputs, methods_to_compare, train_function)
+    comparison_results = qw.compare_quantization_methods(model, example_inputs, methods_to_compare, train_function)
     logger.info("Quantization method comparison results:")
     for method, metrics in comparison_results.items():
         logger.info(f"{method}: {metrics}")
 
+    # Visualize comparison results
+    qw.visualize_comparison_results(comparison_results)
+
+    # Automatically select the best method
+    best_method = qw.auto_select_best_method(comparison_results)
+
     # Quantize and evaluate the model using the best method
-    with timer("Quantize and evaluate model"):
-        quantized_model, metrics = qw.quantize_and_evaluate(
-            model,
-            example_inputs,
-            quantization_type=best_method,
-            calibration_data=train_loader,
-            eval_function=lambda m: ModelEvaluator.evaluate_binary_classification(m, test_loader),
-            train_function=train_function
-        )
+    quantized_model, metrics = qw.quantize_and_evaluate(
+        model,
+        example_inputs,
+        quantization_type=best_method,
+        calibration_data=train_loader,
+        eval_function=lambda m: ModelEvaluator.evaluate_binary_classification(m, test_loader),
+        train_function=train_function
+    )
 
     logger.info("Quantization complete. Metrics:")
     for key, value in metrics.items():
         logger.info(f"{key}: {value}")
 
     # Save the quantized model
-    qw.save_quantized_model(quantized_model, "quantized_binary_model.pth")
-    logger.info("Quantized model saved to quantized_binary_model.pth")
+    ModelSaver.save_model(quantized_model, config.save_path)
+    logger.info(f"Quantized model saved to {config.save_path}")
 
     # Load the quantized model
-    loaded_model = qw.load_quantized_model("quantized_binary_model.pth")
-    logger.info("Loaded quantized model from quantized_binary_model.pth")
+    loaded_model = ModelSaver.load_model(config.save_path, SimpleCNN)
+    logger.info(f"Loaded quantized model from {config.save_path}")
 
     # Compare the loaded model with the original quantized model
     loaded_accuracy = ModelEvaluator.evaluate_binary_classification(loaded_model, test_loader)

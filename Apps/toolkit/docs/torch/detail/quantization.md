@@ -948,8 +948,6 @@ PyTorch quantization supports a few built-in native BackendConfigs under the tor
 
 There are also other BackendConfigs under development (e.g. for TensorRT and x86), but these are still mostly experimental at the moment. If the user wishes to integrate a new, custom backend with PyTorch’s quantization API, they may define their own BackendConfigs using the same set of APIs used to define the natively supported ones as in the example above.
 
-
-
 ## [Dynamic Quantization](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html)
 
 In this recipe, you will learn how to leverage Dynamic Quantization to accelerate inference on an LSTM-style recurrent neural network. This technique reduces the size of the model weights and speeds up model execution.
@@ -3328,4 +3326,3 @@ In this tutorial, we demonstrated how to run Quantization-Aware Training (QAT) f
 
 ## [How to Write a Quantizer for PyTorch 2 Export Quantization](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html)
 
---FX Graph Mode Post Training Static Quantization

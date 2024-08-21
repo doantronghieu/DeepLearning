@@ -1,4 +1,4 @@
-""" Example config.yaml
+"""
 quantization:
   backend: 'x86'
   device: 'cpu'
@@ -7,13 +7,22 @@ quantization:
   evaluation_batches: 20
 
 model:
-  input_shape: [1, 28, 28]  # Single channel for black and white images
+  input_shape: [1, 28, 28]  # [channels, height, width]
 
 data:
   batch_size: 32
-  num_samples: 1000  # Total number of samples to generate
+  num_samples: 10000  # Total number of samples to generate
 
 logging:
   level: 'INFO'
   output_file: 'quantization.log'
+
+training:
+  learning_rate: 0.001
+  num_epochs: 5
+
+save_path: 'quantized_model.pth'
 """
+
+We have duplicated class: QuantizationMethod (Enum) and QuantizationMethod
+I see some methods from original codebase (compare_activation_distributions, get_activation_values, compare_models, _compare_architectures, _compare_outputs, _compare_parameters) is missed, do we still need it
