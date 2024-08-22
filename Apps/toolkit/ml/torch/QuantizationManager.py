@@ -1,14 +1,19 @@
 import os
 import time
+import copy
+from loguru import logger
 from typing import Dict, Any, List, Union, Optional, Tuple, Callable, Type
 from abc import abstractmethod, ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict, field
 from enum import Enum
+import concurrent.futures
+from tqdm import tqdm
 
 import yaml
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.ao.quantization as tq
 import torch.utils.data as td
 from torch.utils.data import DataLoader, TensorDataset
@@ -25,8 +30,6 @@ from torch.ao.quantization.qconfig_mapping import get_default_qconfig_mapping
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 
 from torch._export import capture_pre_autograd_graph, dynamic_dim
-
-from loguru import logger
 
 class Backend(Enum):
     X86 = 'x86'
@@ -55,47 +58,60 @@ class Config:
     learning_rate: float
     num_epochs: int
     save_path: str
+    custom_options: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, yaml_file: str) -> 'Config':
         with open(yaml_file, 'r') as f:
             data = yaml.safe_load(f)
-        return cls(
-            backend=Backend(data['backend']),
-            device=data['device'],
-            method=QuantizationMethod(data['method']),
-            calibration_batches=data['calibration_batches'],
-            evaluation_batches=data['evaluation_batches'],
-            input_shape=data['input_shape'],
-            batch_size=data['batch_size'],
-            num_samples=data['num_samples'],
-            log_level=data['log_level'],
-            log_file=data['log_file'],
-            learning_rate=data['learning_rate'],
-            num_epochs=data['num_epochs'],
-            save_path=data['save_path']
-        )
+        return cls(**data)
 
-class ConfigValidationError(Exception):
-    pass
+    def to_yaml(self, yaml_file: str) -> None:
+        config_dict = asdict(self)
+        config_dict['backend'] = self.backend.value
+        config_dict['method'] = self.method.value
+        with open(yaml_file, 'w') as f:
+            yaml.dump(config_dict, f)
 
-class ConfigValidator:
-    @staticmethod
-    def validate(config: Config) -> None:
-        if config.calibration_batches <= 0:
+    @classmethod
+    def load(cls, yaml_file: str) -> 'Config':
+        with open(yaml_file, 'r') as f:
+            data = yaml.safe_load(f)
+        data['backend'] = Backend(data['backend'])
+        data['method'] = QuantizationMethod(data['method'])
+        return cls(**data)
+
+    def validate(self) -> None:
+        if self.calibration_batches <= 0:
             raise ConfigValidationError("calibration_batches must be positive")
-        if config.evaluation_batches <= 0:
+        if self.evaluation_batches <= 0:
             raise ConfigValidationError("evaluation_batches must be positive")
-        if len(config.input_shape) != 3:
+        if len(self.input_shape) != 3:
             raise ConfigValidationError("input_shape must have 3 dimensions")
-        if config.batch_size <= 0:
+        if self.batch_size <= 0:
             raise ConfigValidationError("batch_size must be positive")
-        if config.num_samples <= 0:
+        if self.num_samples <= 0:
             raise ConfigValidationError("num_samples must be positive")
-        if config.learning_rate <= 0:
+        if self.learning_rate <= 0:
             raise ConfigValidationError("learning_rate must be positive")
-        if config.num_epochs <= 0:
+        if self.num_epochs <= 0:
             raise ConfigValidationError("num_epochs must be positive")
+        
+        if self.backend == Backend.QNNPACK and self.device.startswith('cuda'):
+            raise ConfigValidationError("QNNPACK backend is not compatible with CUDA devices")
+        if self.method in [QuantizationMethod.PT2E_STATIC, QuantizationMethod.PT2E_QAT] and self.backend != Backend.X86:
+            raise ConfigValidationError("PT2E quantization methods are only compatible with X86 backend")
+
+    def update(self, **kwargs: Dict[str, Any]) -> None:
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                self.custom_options[key] = value
+        self.validate()
+
+    def __str__(self) -> str:
+        return yaml.dump(asdict(self), default_flow_style=False)
 
 class QuantizationError(Exception):
     """Base class for quantization-related errors."""
@@ -105,6 +121,12 @@ class CalibrationError(QuantizationError):
 
 class BackendError(QuantizationError):
     """Raised when there's an error related to backend configuration."""
+
+class ModelStorageError(Exception):
+    """Raised when there's an error related to model storage or retrieval."""
+
+class ConfigValidationError(Exception):
+    """Raised when there's an error in configuration validation."""
 
 @dataclass
 class BackendConfig:
@@ -191,7 +213,6 @@ class NumericSuite:
     def visualize_quantization_effects(float_model: nn.Module, quantized_model: nn.Module):
         import matplotlib.pyplot as plt
         
-        # Compare weights
         float_weights = dict(float_model.named_parameters())
         quantized_weights = dict(quantized_model.named_parameters())
         
@@ -207,7 +228,6 @@ class NumericSuite:
                 plt.tight_layout()
                 plt.show()
         
-        # Compare activations
         example_input = torch.randn(1, 3, 224, 224)  # Adjust input shape as needed
         float_activations = NumericSuite.get_matching_activations(float_model, quantized_model, example_input)
         
@@ -259,13 +279,8 @@ class NumericSuite:
     def compare_models(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
         comparison_results = {}
         
-        # Compare model architectures
         comparison_results["architecture_diff"] = NumericSuite._compare_architectures(model1, model2)
-        
-        # Compare model outputs
         comparison_results["output_diff"] = NumericSuite._compare_outputs(model1, model2, example_inputs)
-        
-        # Compare model parameters
         comparison_results["parameter_diff"] = NumericSuite._compare_parameters(model1, model2)
         
         return comparison_results
@@ -325,6 +340,71 @@ class NumericSuite:
         
         return diff_stats
 
+    @staticmethod
+    def visualize_quantization_error_distribution(float_model: nn.Module, quantized_model: nn.Module, example_inputs: Any):
+        import matplotlib.pyplot as plt
+        
+        float_activations = NumericSuite.get_activation_values(float_model, example_inputs)
+        quant_activations = NumericSuite.get_activation_values(quantized_model, example_inputs)
+        
+        for name in float_activations.keys():
+            if name in quant_activations:
+                error = float_activations[name] - quant_activations[name]
+                plt.figure(figsize=(10, 5))
+                plt.hist(error.flatten(), bins=50)
+                plt.title(f"Quantization Error Distribution: {name}")
+                plt.xlabel("Error")
+                plt.ylabel("Frequency")
+                plt.show()
+    
+    @staticmethod
+    def visualize_weight_distributions(float_model: nn.Module, quantized_model: nn.Module):
+        import matplotlib.pyplot as plt
+
+        for (name, float_param), (_, quant_param) in zip(float_model.named_parameters(), quantized_model.named_parameters()):
+            if 'weight' in name:
+                plt.figure(figsize=(10, 5))
+                plt.subplot(1, 2, 1)
+                plt.hist(float_param.detach().numpy().flatten(), bins=50)
+                plt.title(f"Float Weights: {name}")
+                plt.subplot(1, 2, 2)
+                plt.hist(quant_param.dequantize().detach().numpy().flatten(), bins=50)
+                plt.title(f"Quantized Weights: {name}")
+                plt.tight_layout()
+                plt.show()
+
+    @staticmethod
+    def visualize_activation_distributions(float_model: nn.Module, quantized_model: nn.Module, example_input: torch.Tensor):
+        import matplotlib.pyplot as plt
+
+        def hook_fn(module, input, output, activations, name):
+            activations[name] = output.detach()
+
+        float_activations = {}
+        quant_activations = {}
+
+        for name, module in float_model.named_modules():
+            module.register_forward_hook(lambda mod, inp, out, act=float_activations, n=name: hook_fn(mod, inp, out, act, n))
+
+        for name, module in quantized_model.named_modules():
+            module.register_forward_hook(lambda mod, inp, out, act=quant_activations, n=name: hook_fn(mod, inp, out, act, n))
+
+        with torch.no_grad():
+            float_model(example_input)
+            quantized_model(example_input)
+
+        for name in float_activations:
+            if name in quant_activations:
+                plt.figure(figsize=(10, 5))
+                plt.subplot(1, 2, 1)
+                plt.hist(float_activations[name].numpy().flatten(), bins=50)
+                plt.title(f"Float Activations: {name}")
+                plt.subplot(1, 2, 2)
+                plt.hist(quant_activations[name].dequantize().numpy().flatten(), bins=50)
+                plt.title(f"Quantized Activations: {name}")
+                plt.tight_layout()
+                plt.show()
+
 class ModelEvaluator:
     @staticmethod
     def print_model_size(model: nn.Module, label: str = "") -> int:
@@ -350,7 +430,7 @@ class ModelEvaluator:
         device: str,
         n_iter: int = 100
     ) -> Dict[str, float]:
-        def measure_latency(model: nn.Module, inputs: Any, n_iter: int) -> float:
+        def measure_latency(model: nn.Module, inputs: Any) -> float:
             model = model.to(device)
             inputs = inputs[0].to(device) if isinstance(inputs, tuple) else inputs.to(device)
             
@@ -362,8 +442,7 @@ class ModelEvaluator:
                 start = time.time()
             
             with torch.no_grad():
-                for _ in range(n_iter):
-                    _ = model(inputs)
+                _ = model(inputs)
             
             if device.startswith('cuda'):
                 ender.record()
@@ -372,10 +451,14 @@ class ModelEvaluator:
             else:
                 elapsed_time = time.time() - start
             
-            return elapsed_time / n_iter
+            return elapsed_time
 
-        fp32_latency = measure_latency(fp32_model, inputs, n_iter)
-        int8_latency = measure_latency(int8_model, inputs, n_iter)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            fp32_latencies = list(executor.map(lambda _: measure_latency(fp32_model, inputs), range(n_iter)))
+            int8_latencies = list(executor.map(lambda _: measure_latency(int8_model, inputs), range(n_iter)))
+
+        fp32_latency = sum(fp32_latencies) / n_iter
+        int8_latency = sum(int8_latencies) / n_iter
         
         logger.info(f"FP32 Latency: {fp32_latency:.6f} seconds")
         logger.info(f"INT8 Latency: {int8_latency:.6f} seconds")
@@ -432,7 +515,7 @@ class ModelEvaluator:
         total = 0
 
         with torch.no_grad():
-            for inputs, labels in dataloader:
+            for inputs, labels in tqdm(dataloader, desc="Evaluating models"):
                 inputs, labels = inputs.to(device), labels.to(device)
                 
                 fp32_outputs = fp32_model(inputs)
@@ -456,12 +539,75 @@ class ModelEvaluator:
         correct = 0
         total = 0
         with torch.no_grad():
-            for inputs, labels in test_loader:
+            for inputs, labels in tqdm(test_loader, desc="Evaluating binary classification"):
                 outputs = model(inputs)
                 predicted = (outputs > 0.5).float()
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
         return correct / total
+
+    @staticmethod
+    def evaluate_multi_class_classification(model: nn.Module, test_loader: DataLoader, num_classes: int) -> Dict[str, float]:
+        model.eval()
+        correct = 0
+        total = 0
+        class_correct = [0] * num_classes
+        class_total = [0] * num_classes
+        
+        with torch.no_grad():
+            for inputs, labels in tqdm(test_loader, desc="Evaluating multi-class classification"):
+                outputs = model(inputs)
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+                
+                for i in range(labels.size(0)):
+                    label = labels[i]
+                    class_correct[label] += (predicted[i] == label).item()
+                    class_total[label] += 1
+        
+        accuracy = correct / total
+        class_accuracies = {f"class_{i}_accuracy": class_correct[i] / class_total[i] for i in range(num_classes)}
+        
+        return {"overall_accuracy": accuracy, **class_accuracies}
+
+    @staticmethod
+    def evaluate_model_robustness(model: nn.Module, test_loader: DataLoader, perturbation_types: List[str], perturbation_magnitudes: List[float]) -> Dict[str, float]:
+        results = {}
+        
+        for p_type in perturbation_types:
+            for p_mag in perturbation_magnitudes:
+                perturbed_accuracy = ModelEvaluator._evaluate_with_perturbation(model, test_loader, p_type, p_mag)
+                results[f"{p_type}_{p_mag}"] = perturbed_accuracy
+        
+        return results
+
+    @staticmethod
+    def _evaluate_with_perturbation(model: nn.Module, test_loader: DataLoader, perturbation_type: str, magnitude: float) -> float:
+        model.eval()
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for inputs, labels in tqdm(test_loader, desc=f"Evaluating with {perturbation_type} perturbation"):
+                perturbed_inputs = ModelEvaluator._apply_perturbation(inputs, perturbation_type, magnitude)
+                outputs = model(perturbed_inputs)
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+        
+        return correct / total
+
+    @staticmethod
+    def _apply_perturbation(inputs: torch.Tensor, perturbation_type: str, magnitude: float) -> torch.Tensor:
+        if perturbation_type == 'gaussian_noise':
+            return inputs + torch.randn_like(inputs) * magnitude
+        elif perturbation_type == 'salt_and_pepper':
+            mask = torch.rand_like(inputs) < magnitude
+            inputs[mask] = torch.randint(2, size=inputs[mask].shape).float()
+            return inputs
+        else:
+            raise ValueError(f"Unknown perturbation type: {perturbation_type}")
 
     @staticmethod
     def evaluate_model(
@@ -514,55 +660,161 @@ class BaseQuantizationMethod(ABC):
         pass
 
     def prepare_model(self, model: nn.Module, example_inputs: Any) -> nn.Module:
-        """Common preparation steps for all quantization methods."""
         model = self.quantizer.handle_non_traceable(model)
-        self.quantizer.update_qconfig_mapping(model)
-        return self.quantizer.auto_fuse_modules(model)
+        self.quantizer.qconfig_manager.update_qconfig_mapping(model)
+        return self.quantizer.model_fuser.auto_fuse_modules(model)
 
 class StaticQuantization(BaseQuantizationMethod):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         model.eval()
         logger.info("Preparing model for static quantization")
-        prepared_model = tqfx.prepare_fx(model, self.quantizer.qconfig_mapping, example_inputs)
+        prepared_model = tqfx.prepare_fx(model, self.quantizer.qconfig_manager.qconfig_mapping, example_inputs)
         logger.info("Calibrating model")
-        self.quantizer.calibrate(prepared_model, example_inputs)
+        self.quantizer.calibration_manager.calibrate(prepared_model, example_inputs)
         logger.info("Converting model to static quantized version")
         return tqfx.convert_fx(prepared_model)
 
 class DynamicQuantization(BaseQuantizationMethod):
+    def __init__(self, quantizer: 'Quantizer', custom_qconfig_spec: Optional[Dict[Type[nn.Module], Any]] = None):
+        super().__init__(quantizer)
+        self.custom_qconfig_spec = custom_qconfig_spec
+
+    def get_default_qconfig_spec(self) -> Dict[Type[nn.Module], Any]:
+        per_channel_dynamic_layers = [
+            nn.Linear, nn.LSTM, nn.GRU,
+            nn.Conv1d, nn.Conv2d, nn.Conv3d,
+            nn.ConvTranspose1d, nn.ConvTranspose2d, nn.ConvTranspose3d
+        ]
+        
+        qconfig_spec = {layer_type: per_channel_dynamic_qconfig for layer_type in per_channel_dynamic_layers}
+        qconfig_spec[nn.Embedding] = float_qparams_weight_only_qconfig
+        
+        return qconfig_spec
+
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         logger.info("Starting dynamic quantization")
-        qconfig_spec = {
-            nn.Linear: per_channel_dynamic_qconfig,
-            nn.LSTM: per_channel_dynamic_qconfig,
-            nn.Embedding: float_qparams_weight_only_qconfig
-        }
+        
+        qconfig_spec = self.get_default_qconfig_spec()
+        if self.custom_qconfig_spec:
+            qconfig_spec.update(self.custom_qconfig_spec)
+        
         qconfig_mapping = tq.QConfigMapping().set_global(None)
         for module_type, qconfig in qconfig_spec.items():
             qconfig_mapping.set_object_type(module_type, qconfig)
+        
+        # Allow for specifying configs for specific layers by name
+        for name, module in model.named_modules():
+            if name in self.custom_qconfig_spec:
+                qconfig_mapping.set_module_name(name, self.custom_qconfig_spec[name])
         
         logger.info("Preparing model for dynamic quantization using FX")
         prepared_model = tqfx.prepare_fx(model, qconfig_mapping, example_inputs)
         logger.info("Converting model to dynamic quantized version using FX")
         return tqfx.convert_fx(prepared_model)
 
-class QuantizationAwareTraining(BaseQuantizationMethod):
-    def __init__(self, quantizer: 'Quantizer', train_function: Callable):
-        super().__init__(quantizer)
-        self.train_function = train_function
+class TrainerBase(ABC):
+    def __init__(self, 
+                 num_epochs: int,
+                 learning_rate: float,
+                 optimizer_class: Type[torch.optim.Optimizer],
+                 loss_fn: Callable = F.cross_entropy,
+                 scheduler_class: Optional[Type[torch.optim.lr_scheduler._LRScheduler]] = None,
+                 scheduler_params: Optional[Dict[str, Any]] = None):
+        self.num_epochs = num_epochs
+        self.learning_rate = learning_rate
+        self.optimizer_class = optimizer_class
+        self.loss_fn = loss_fn
+        self.scheduler_class = scheduler_class
+        self.scheduler_params = scheduler_params or {}
 
-    def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
-        model = self.prepare_model(model, example_inputs)
+    @abstractmethod
+    def train(self, model: nn.Module, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
+        pass
+
+    @staticmethod
+    def evaluate(model: nn.Module, val_loader: DataLoader) -> float:
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for inputs, targets in val_loader:
+                outputs = model(inputs)
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+        return correct / total
+
+    def train_epoch(self, model: nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer) -> float:
         model.train()
-        logger.info("Preparing model for quantization-aware training")
-        prepared_model = tqfx.prepare_qat_fx(model, self.quantizer.qconfig_mapping, example_inputs)
+        running_loss = 0.0
+        for inputs, targets in train_loader:
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = self.loss_fn(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        return running_loss / len(train_loader)
+
+class QATTrainer(TrainerBase):
+    def train(self, model: nn.Module, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
+        model.train()
+        optimizer = self.optimizer_class(model.parameters(), lr=self.learning_rate)
+        scheduler = self.scheduler_class(optimizer, **self.scheduler_params) if self.scheduler_class else None
+        
         logger.info("Starting quantization-aware training")
-        self.train_function(prepared_model)
-        prepared_model.eval()
+        best_model = None
+        best_accuracy = 0.0
+        
+        for epoch in range(self.num_epochs):
+            train_loss = self.train_epoch(model, train_loader, optimizer)
+            
+            if scheduler:
+                scheduler.step()
+            
+            if val_loader:
+                val_accuracy = self.evaluate(model, val_loader)
+                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
+                
+                if val_accuracy > best_accuracy:
+                    best_accuracy = val_accuracy
+                    best_model = copy.deepcopy(model)
+            else:
+                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}")
+        
+        return best_model if best_model is not None else model
+
+class QuantizationAwareTraining(BaseQuantizationMethod):
+    def __init__(self, quantizer: 'Quantizer', 
+                 num_epochs: int,
+                 learning_rate: float,
+                 optimizer_class: Type[torch.optim.Optimizer],
+                 loss_fn: Callable = F.cross_entropy,
+                 scheduler_class: Optional[Type[torch.optim.lr_scheduler._LRScheduler]] = None,
+                 scheduler_params: Optional[Dict[str, Any]] = None):
+        super().__init__(quantizer)
+        self.trainer = QATTrainer(
+            num_epochs=num_epochs,
+            learning_rate=learning_rate,
+            optimizer_class=optimizer_class,
+            loss_fn=loss_fn,
+            scheduler_class=scheduler_class,
+            scheduler_params=scheduler_params
+        )
+
+    def quantize(self, model: nn.Module, example_inputs: Any, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
+        logger.info("Preparing model for quantization-aware training")
+        prepared_model = tqfx.prepare_qat_fx(model, self.quantizer.qconfig_manager.qconfig_mapping, example_inputs)
+        
+        logger.info("Starting quantization-aware training")
+        trained_model = self.trainer.train(prepared_model, train_loader, val_loader)
+        
+        trained_model.eval()
         logger.info("Converting model to quantized version after QAT")
-        return tqfx.convert_fx(prepared_model)
+        return tqfx.convert_fx(trained_model)
 
 class PT2EStaticQuantization(BaseQuantizationMethod):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
@@ -570,7 +822,7 @@ class PT2EStaticQuantization(BaseQuantizationMethod):
         logger.info("Starting PT2E static quantization")
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = tqpt2e.prepare_pt2e(exported_model, self.quantizer.quantizer)
-        self.quantizer.calibrate(prepared_model, example_inputs)
+        self.quantizer.calibration_manager.calibrate(prepared_model, example_inputs)
         quantized_model = tqpt2e.convert_pt2e(prepared_model)
         tq.move_exported_model_to_eval(quantized_model)
         return quantized_model
@@ -590,13 +842,10 @@ class PT2EQuantizationAwareTraining(BaseQuantizationMethod):
         tq.move_exported_model_to_eval(quantized_model)
         return quantized_model
 
-class Quantizer:
-    def __init__(self, backend_manager: BackendManager, backend: Backend):
-        self.backend_manager = backend_manager
+class QConfigManager:
+    def __init__(self, backend: Backend):
         self.backend = backend
         self.qconfig_mapping = self._get_default_qconfig_mapping()
-        self.quantizer = self.backend_manager.get_quantizer()
-        self.numeric_suite = NumericSuite()
 
     def _get_default_qconfig_mapping(self) -> tq.QConfigMapping:
         return get_default_qconfig_mapping(self.backend.value)
@@ -614,20 +863,78 @@ class Quantizer:
     def set_module_qconfig(self, module_type: Union[str, nn.Module], qconfig: Any) -> None:
         self.qconfig_mapping.set_object_type(module_type, qconfig)
 
-    def fuse_modules(self, model: nn.Module, modules_to_fuse: List[List[str]]) -> nn.Module:
+    def update_qconfig_mapping(self, model: nn.Module) -> None:
+        logger.info("Updating qconfig mapping based on model architecture")
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                self.set_module_qconfig(nn.Conv2d, per_channel_dynamic_qconfig)
+            elif isinstance(module, nn.Linear):
+                self.set_module_qconfig(nn.Linear, default_dynamic_qconfig)
+        logger.info("QConfig mapping updated")
+
+import re
+
+class ModelFuser:
+    @staticmethod
+    def fuse_modules(model: nn.Module, modules_to_fuse: List[List[str]]) -> nn.Module:
         logger.info(f"Fusing modules: {modules_to_fuse}")
         return tq.fuse_modules(model, modules_to_fuse)
 
+    @staticmethod
+    def auto_fuse_modules(model: nn.Module) -> nn.Module:
+        logger.info("Automatically fusing modules")
+        fusion_patterns = [
+            (r'.*conv.*', r'.*bn.*'),
+            (r'.*conv.*', r'.*bn.*', r'.*relu.*'),
+            (r'.*conv.*', r'.*relu.*'),
+            (r'.*linear.*', r'.*relu.*'),
+        ]
+        
+        def get_modules_to_fuse(model: nn.Module, pattern: List[str]) -> List[List[str]]:
+            modules_to_fuse = []
+            for name, _ in model.named_modules():
+                if len(pattern) == 2:
+                    if re.match(pattern[0], name) and re.match(pattern[1], name.split('.')[-1]):
+                        modules_to_fuse.append([name, name.split('.')[-1]])
+                elif len(pattern) == 3:
+                    module_names = name.split('.')
+                    if len(module_names) >= 3:
+                        if (re.match(pattern[0], module_names[-3]) and 
+                            re.match(pattern[1], module_names[-2]) and 
+                            re.match(pattern[2], module_names[-1])):
+                            modules_to_fuse.append(['.'.join(module_names[:-2]), 
+                                                    '.'.join(module_names[:-1]), 
+                                                    '.'.join(module_names)])
+            return modules_to_fuse
+
+        for pattern in fusion_patterns:
+            modules_to_fuse = get_modules_to_fuse(model, pattern)
+            if modules_to_fuse:
+                model = ModelFuser.fuse_modules(model, modules_to_fuse)
+        
+        return model
+
+class CalibrationManager:
     def calibrate(self, prepared_model: nn.Module, calibration_data: Any) -> None:
         logger.info("Calibrating model")
         prepared_model.eval()
         try:
             with torch.no_grad():
-                for data in calibration_data:
-                    prepared_model(*data)
+                for batch in tqdm(calibration_data, desc="Calibrating"):
+                    prepared_model(*batch)
         except Exception as e:
             logger.error(f"Failed to calibrate model: {str(e)}")
             raise CalibrationError("Failed to calibrate model") from e
+
+class Quantizer:
+    def __init__(self, backend_manager: BackendManager, backend: Backend):
+        self.backend_manager = backend_manager
+        self.backend = backend
+        self.qconfig_manager = QConfigManager(backend)
+        self.model_fuser = ModelFuser()
+        self.calibration_manager = CalibrationManager()
+        self.quantizer = self.backend_manager.get_quantizer()
+        self.numeric_suite = NumericSuite()
 
     def handle_non_traceable(self, model: nn.Module) -> nn.Module:
         logger.info("Handling non-traceable parts of the model")
@@ -649,7 +956,6 @@ class Quantizer:
             logger.warning("No comparison results available. Falling back to heuristic-based selection.")
             return self._heuristic_based_selection(model)
         
-        # Define weights for each metric (can be adjusted based on priorities)
         weights = {
             'size_reduction': 0.3,
             'latency_speedup': 0.3,
@@ -681,27 +987,6 @@ class Quantizer:
         else:
             return QuantizationMethod.DYNAMIC
 
-    def update_qconfig_mapping(self, model: nn.Module) -> None:
-        logger.info("Updating qconfig mapping based on model architecture")
-        for name, module in model.named_modules():
-            if isinstance(module, nn.Conv2d):
-                self.set_module_qconfig(nn.Conv2d, per_channel_dynamic_qconfig)
-            elif isinstance(module, nn.Linear):
-                self.set_module_qconfig(nn.Linear, default_dynamic_qconfig)
-        logger.info("QConfig mapping updated")
-
-    def auto_fuse_modules(self, model: nn.Module) -> nn.Module:
-        logger.info("Automatically fusing modules")
-        fusion_patterns = [
-            ['conv', 'bn'],
-            ['conv', 'bn', 'relu'],
-            ['conv', 'relu'],
-            ['linear', 'relu'],
-        ]
-        for pattern in fusion_patterns:
-            model = self.fuse_modules(model, pattern)
-        return model
-
     def export_model(self, model: nn.Module, example_inputs: Any, dynamic: bool = False) -> nn.Module:
         logger.info("Exporting model")
         try:
@@ -724,6 +1009,36 @@ class Quantizer:
         except Exception as e:
             logger.error(f"Failed to prepare model for quantization: {str(e)}")
             raise QuantizationError("Failed to prepare model for quantization") from e
+
+    def auto_tune_quantization_params(self, model: nn.Module, example_inputs: Any, eval_function: Callable) -> nn.Module:
+        logger.info("Auto-tuning quantization parameters")
+        best_model = None
+        best_accuracy = float('-inf')
+        
+        bit_widths = [4, 8]
+        qschemes = [torch.per_tensor_affine, torch.per_channel_symmetric]
+        
+        for bits in tqdm(bit_widths, desc="Tuning bit widths"):
+            for qscheme in tqdm(qschemes, desc="Tuning qschemes", leave=False):
+                logger.info(f"Trying quantization with {bits} bits and {qscheme} scheme")
+                
+                qconfig = torch.quantization.QConfig(
+                    activation=torch.quantization.MinMaxObserver.with_args(qscheme=qscheme, dtype=torch.quint8),
+                    weight=torch.quantization.MinMaxObserver.with_args(qscheme=qscheme, dtype=torch.qint8)
+                )
+                
+                self.qconfig_manager.set_global_qconfig(qconfig)
+                
+                quantized_model = self.quantize(model, example_inputs)
+                
+                accuracy = eval_function(quantized_model)
+                
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_model = quantized_model
+        
+        logger.info(f"Auto-tuning complete. Best accuracy: {best_accuracy}")
+        return best_model
 
 class QuantizationMethodFactory:
     @staticmethod
@@ -752,6 +1067,7 @@ class QuantizationWrapper:
         self.backend_manager = BackendManager(config.backend)
         self.quantizer = Quantizer(self.backend_manager, config.backend)
         self.model_evaluator = ModelEvaluator()
+        self.storage_manager = ModelStorageManager(config.save_path)
 
     def quantize_and_evaluate(
         self,
@@ -773,15 +1089,24 @@ class QuantizationWrapper:
 
             metrics = self._evaluate_model(model, quantized_model, example_inputs, eval_function)
 
+            # Save the quantized model
+            metadata = {
+                'quantization_method': quantization_type.value,
+                'metrics': metrics,
+                'config': asdict(self.config)
+            }
+            version = self.storage_manager.save_model(quantized_model, metadata)
+            logger.info(f"Quantized model saved as version {version}")
+
             return quantized_model, metrics
         except Exception as e:
             logger.error(f"Error during quantization and evaluation: {str(e)}")
-            raise
+            raise QuantizationError("Quantization process failed") from e
 
     def _prepare_model(self, model: nn.Module) -> nn.Module:
         model = self.quantizer.handle_non_traceable(model)
-        self.quantizer.update_qconfig_mapping(model)
-        return self.quantizer.auto_fuse_modules(model)
+        self.quantizer.qconfig_manager.update_qconfig_mapping(model)
+        return self.quantizer.model_fuser.auto_fuse_modules(model)
 
     def _quantize_model(self, model: nn.Module, example_inputs: Any, quantization_type: QuantizationMethod, train_function: Optional[Callable]) -> nn.Module:
         quantization_method = QuantizationMethodFactory.create(
@@ -792,7 +1117,7 @@ class QuantizationWrapper:
         return quantization_method.quantize(model, example_inputs)
 
     def _calibrate_model(self, model: nn.Module, calibration_data: Any) -> None:
-        self.quantizer.calibrate(model, calibration_data)
+        self.quantizer.calibration_manager.calibrate(model, calibration_data)
 
     def _evaluate_model(self, original_model: nn.Module, quantized_model: nn.Module, example_inputs: Any, eval_function: Optional[Callable]) -> Dict[str, Any]:
         return self.model_evaluator.evaluate_model(
@@ -811,13 +1136,34 @@ class QuantizationWrapper:
         train_function: Optional[Callable] = None
     ) -> Dict[str, Dict[str, Any]]:
         results = {}
-        for method in methods:
-            quantization_method = QuantizationMethodFactory.create(method, self.quantizer, train_function)
-            quantized_model = quantization_method.quantize(model, example_inputs)
-            metrics = self.model_evaluator.evaluate_model(model, quantized_model, example_inputs, self.config.device)
-            results[method.value] = metrics
+        for method in tqdm(methods, desc="Comparing quantization methods"):
+            try:
+                quantization_method = QuantizationMethodFactory.create(method, self.quantizer, train_function)
+                quantized_model = quantization_method.quantize(model, example_inputs)
+                metrics = self.model_evaluator.evaluate_model(model, quantized_model, example_inputs, self.config.device)
+                results[method.value] = metrics
+            except Exception as e:
+                logger.error(f"Error during comparison of {method.value}: {str(e)}")
+                results[method.value] = {"error": str(e)}
         return results
 
+    def auto_select_best_method(self, results: Dict[str, Dict[str, Any]]) -> QuantizationMethod:
+        valid_results = {k: v for k, v in results.items() if "error" not in v}
+        if not valid_results:
+            raise QuantizationError("No valid quantization methods found")
+        best_method = max(valid_results, key=lambda x: valid_results[x]['size_reduction'] * valid_results[x]['latency']['fp32_latency'] / valid_results[x]['latency']['int8_latency'] / (1 + valid_results[x]['accuracy']['relative_difference']))
+        logger.info(f"Automatically selected best method: {best_method}")
+        return QuantizationMethod(best_method)
+
+    def track_quantization_progress(self, total_steps: int):
+        self.progress = 0
+        self.total_steps = total_steps
+
+    def update_progress(self):
+        self.progress += 1
+        progress_percentage = (self.progress / self.total_steps) * 100
+        logger.info(f"Quantization progress: {progress_percentage:.2f}%")
+    
     def visualize_comparison_results(self, results: Dict[str, Dict[str, Any]]) -> None:
         import matplotlib.pyplot as plt
 
@@ -843,13 +1189,8 @@ class QuantizationWrapper:
         plt.tight_layout()
         plt.show()
 
-    def auto_select_best_method(self, results: Dict[str, Dict[str, Any]]) -> QuantizationMethod:
-        best_method = max(results, key=lambda x: results[x]['size_reduction'] * results[x]['latency']['fp32_latency'] / results[x]['latency']['int8_latency'] / (1 + results[x]['accuracy']['relative_difference']))
-        logger.info(f"Automatically selected best method: {best_method}")
-        return QuantizationMethod(best_method)
-
 class SimpleCNN(nn.Module):
-    def __init__(self, input_shape: List[int]):
+    def __init__(self, input_shape: List[int], num_classes: int = 1):
         super(SimpleCNN, self).__init__()
         self.conv1 = nn.Conv2d(input_shape[0], 16, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU()
@@ -858,7 +1199,7 @@ class SimpleCNN(nn.Module):
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(2)
         self.flatten = nn.Flatten()
-        self.fc = nn.Linear(32 * (input_shape[1] // 4) * (input_shape[2] // 4), 1)
+        self.fc = nn.Linear(32 * (input_shape[1] // 4) * (input_shape[2] // 4), num_classes)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -868,56 +1209,111 @@ class SimpleCNN(nn.Module):
         x = self.fc(x)
         return self.sigmoid(x)
 
-def create_binary_dataset(config: Config) -> Tuple[TensorDataset, TensorDataset]:
-    total_samples = config.num_samples
-    train_samples = int(0.8 * total_samples)  # 80% for training
-    test_samples = total_samples - train_samples
+class DataManager:
+    def __init__(self, config: Config):
+        self.config = config
 
-    def create_data(num_samples: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        images = torch.randint(0, 2, (num_samples, *config.input_shape), dtype=torch.float32)
-        labels = (images.view(num_samples, -1).sum(dim=1) > (images[0].numel() // 2)).float()
-        return images, labels
+    def get_example_inputs(self) -> torch.Tensor:
+        return torch.randn(1, *self.config.input_shape)
 
-    train_images, train_labels = create_data(train_samples)
-    test_images, test_labels = create_data(test_samples)
+    def get_calibration_data(self) -> DataLoader:
+        dummy_data = torch.randn(100, *self.config.input_shape)
+        dummy_labels = torch.randint(0, 2, (100,))
+        dataset = TensorDataset(dummy_data, dummy_labels)
+        return DataLoader(dataset, batch_size=32)
 
-    return TensorDataset(train_images, train_labels), TensorDataset(test_images, test_labels)
+    def create_binary_dataset(self) -> Tuple[TensorDataset, TensorDataset]:
+        total_samples = self.config.num_samples
+        train_samples = int(0.8 * total_samples)  # 80% for training
+        test_samples = total_samples - train_samples
 
-class ModelSaver:
-    @staticmethod
-    def save_model(model: nn.Module, path: str, use_jit: bool = True) -> None:
+        def create_data(num_samples: int) -> Tuple[torch.Tensor, torch.Tensor]:
+            images = torch.randint(0, 2, (num_samples, *self.config.input_shape), dtype=torch.float32)
+            labels = (images.view(num_samples, -1).sum(dim=1) > (images[0].numel() // 2)).float()
+            return images, labels
+
+        train_images, train_labels = create_data(train_samples)
+        test_images, test_labels = create_data(test_samples)
+
+        return TensorDataset(train_images, train_labels), TensorDataset(test_images, test_labels)
+
+class ModelStorageManager:
+    def __init__(self, base_path: str):
+        self.base_path = base_path
+        os.makedirs(self.base_path, exist_ok=True)
+        self.version_file = os.path.join(self.base_path, 'versions.yaml')
+        self.versions = self._load_versions()
+
+    def _load_versions(self) -> Dict[str, Any]:
+        if os.path.exists(self.version_file):
+            with open(self.version_file, 'r') as f:
+                return yaml.safe_load(f)
+        return {'latest': 0, 'models': {}}
+
+    def _save_versions(self) -> None:
+        with open(self.version_file, 'w') as f:
+            yaml.dump(self.versions, f)
+
+    def save_model(self, model: nn.Module, metadata: Dict[str, Any], use_jit: bool = True) -> int:
+        version = self.versions['latest'] + 1
+        model_path = os.path.join(self.base_path, f'model_v{version}.pth')
+        
         if use_jit:
-            torch.jit.save(torch.jit.script(model), path)
+            torch.jit.save(torch.jit.script(model), model_path)
         else:
-            torch.save(model.state_dict(), path)
+            torch.save(model.state_dict(), model_path)
+        
+        self.versions['latest'] = version
+        self.versions['models'][version] = {
+            'path': model_path,
+            'metadata': metadata,
+            'timestamp': time.time()
+        }
+        self._save_versions()
+        return version
 
-    @staticmethod
-    def load_model(path: str, model_class: Type[nn.Module], use_jit: bool = True) -> nn.Module:
+    def load_model(self, version: Optional[int] = None, model_class: Type[nn.Module] = SimpleCNN, use_jit: bool = True) -> Tuple[nn.Module, Dict[str, Any]]:
+        if version is None:
+            version = self.versions['latest']
+        
+        if version not in self.versions['models']:
+            raise ModelStorageError(f"Version {version} not found")
+        
+        model_info = self.versions['models'][version]
+        
         if use_jit:
-            return torch.jit.load(path)
+            model = torch.jit.load(model_info['path'])
         else:
             model = model_class()
-            model.load_state_dict(torch.load(path))
-            return model
+            model.load_state_dict(torch.load(model_info['path']))
+        
+        return model, model_info['metadata']
+
+    def get_model_history(self) -> List[Dict[str, Any]]:
+        return [
+            {'version': v, **info}
+            for v, info in self.versions['models'].items()
+        ]
 
 def main():
     # Load configuration
     config = Config.from_yaml('config.yaml')
-    ConfigValidator.validate(config)
+    config.validate()
 
-    # Initialize QuantizationWrapper
+    # Initialize QuantizationWrapper and DataManager
     qw = QuantizationWrapper(config)
+    data_manager = DataManager(config)
 
     # Create model
     model = SimpleCNN(config.input_shape)
 
     # Create datasets
-    train_dataset, test_dataset = create_binary_dataset(config)
+    train_dataset, test_dataset = data_manager.create_binary_dataset()
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size, num_workers=4)
 
     # Get example inputs
-    example_inputs, _ = next(iter(train_loader))
+    example_inputs = data_manager.get_example_inputs()
 
     # Define a simple training function for QAT
     def train_function(model: nn.Module):
@@ -925,10 +1321,10 @@ def main():
         criterion = nn.BCELoss()
         model.train()
         for epoch in range(config.num_epochs):
-            for inputs, labels in train_loader:
+            for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{config.num_epochs}"):
                 optimizer.zero_grad()
                 outputs = model(inputs)
-                loss: torch.Tensor = criterion(outputs, labels.unsqueeze(1))
+                loss = criterion(outputs, labels.unsqueeze(1))
                 loss.backward()
                 optimizer.step()
 
@@ -946,12 +1342,13 @@ def main():
     best_method = qw.auto_select_best_method(comparison_results)
 
     # Quantize and evaluate the model using the best method
+    qw.track_quantization_progress(total_steps=5)  # Assuming 5 steps in the quantization process
     quantized_model, metrics = qw.quantize_and_evaluate(
         model,
         example_inputs,
         quantization_type=best_method,
-        calibration_data=train_loader,
-        eval_function=lambda m: ModelEvaluator.evaluate_binary_classification(m, test_loader),
+        calibration_data=data_manager.get_calibration_data(),
+        eval_function=lambda m: qw.model_evaluator.evaluate_binary_classification(m, test_loader),
         train_function=train_function
     )
 
@@ -959,17 +1356,25 @@ def main():
     for key, value in metrics.items():
         logger.info(f"{key}: {value}")
 
-    # Save the quantized model
-    ModelSaver.save_model(quantized_model, config.save_path)
-    logger.info(f"Quantized model saved to {config.save_path}")
+    # Initialize ModelStorageManager
+    storage_manager = ModelStorageManager(config.save_path)
 
-    # Load the quantized model
-    loaded_model = ModelSaver.load_model(config.save_path, SimpleCNN)
-    logger.info(f"Loaded quantized model from {config.save_path}")
+    # Save the quantized model with metadata
+    metadata = {
+        'quantization_method': best_method.value,
+        'metrics': metrics,
+        'config': asdict(config)
+    }
+    version = storage_manager.save_model(quantized_model, metadata)
+    logger.info(f"Quantized model saved as version {version}")
+
+    # Load the latest quantized model
+    loaded_model, loaded_metadata = storage_manager.load_model()
+    logger.info(f"Loaded quantized model: {loaded_metadata}")
 
     # Compare the loaded model with the original quantized model
-    loaded_accuracy = ModelEvaluator.evaluate_binary_classification(loaded_model, test_loader)
-    original_accuracy = ModelEvaluator.evaluate_binary_classification(quantized_model, test_loader)
+    loaded_accuracy = qw.model_evaluator.evaluate_binary_classification(loaded_model, test_loader)
+    original_accuracy = qw.model_evaluator.evaluate_binary_classification(quantized_model, test_loader)
     logger.info(f"Original quantized model accuracy: {original_accuracy:.4f}")
     logger.info(f"Loaded quantized model accuracy: {loaded_accuracy:.4f}")
 
@@ -985,6 +1390,23 @@ def main():
     logger.info("Quantization profiling results:")
     for key, value in profiling_results.items():
         logger.info(f"{key}: {value}")
+
+    # Evaluate model robustness
+    robustness_results = ModelEvaluator.evaluate_model_robustness(
+        quantized_model,
+        test_loader,
+        perturbation_types=['gaussian_noise', 'salt_and_pepper'],
+        perturbation_magnitudes=[0.1, 0.2, 0.3]
+    )
+    logger.info("Model robustness results:")
+    for key, value in robustness_results.items():
+        logger.info(f"{key}: {value}")
+
+    # Get model version history
+    model_history = storage_manager.get_model_history()
+    logger.info("Model version history:")
+    for entry in model_history:
+        logger.info(f"Version {entry['version']}: {entry['metadata']}")
 
     logger.info("Quantization process completed successfully.")
 

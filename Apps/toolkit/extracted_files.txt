@@ -1,26 +1,51 @@
 """
-quantization:
-  backend: 'x86'
-  device: 'cpu'
-  method: 'static'
-  calibration_batches: 10
-  evaluation_batches: 20
+# Quantization backend
+backend: 'x86'
 
-model:
-  input_shape: [1, 28, 28]  # [channels, height, width]
+# Device to use for computation
+device: 'cpu'
 
-data:
-  batch_size: 32
-  num_samples: 10000  # Total number of samples to generate
+# Quantization method
+method: 'static'
 
-logging:
-  level: 'INFO'
-  output_file: 'quantization.log'
+# Number of batches to use for calibration
+calibration_batches: 10
 
-training:
-  learning_rate: 0.001
-  num_epochs: 5
+# Number of batches to use for evaluation
+evaluation_batches: 50
 
-save_path: 'quantized_model.pth'
+# Input shape for the model (channels, height, width)
+input_shape: [3, 224, 224]
+
+# Batch size for training and evaluation
+batch_size: 32
+
+# Total number of samples to generate for the dataset
+num_samples: 10000
+
+# Logging level
+log_level: 'INFO'
+
+# Log file path
+log_file: 'quantization.log'
+
+# Learning rate for training (if applicable)
+learning_rate: 0.001
+
+# Number of epochs for training (if applicable)
+num_epochs: 5
+
+# Path to save quantized models
+save_path: './quantized_models'
+
+# Custom options (can be extended as needed)
+custom_options:
+  use_cuda: false
+  seed: 42
+  num_workers: 4
 """
 
+
+add more to the prompt
+
+if the original design is provided, maybe there will be some functionalities implemented although the document is not, dont worry about that
