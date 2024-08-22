@@ -3,7 +3,7 @@ import time
 from typing import Dict, Any, List, Union, Optional, Tuple, Callable, Type
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from loguru import logger
+from enum import Enum
 
 import yaml
 import numpy as np
@@ -26,37 +26,25 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, 
 
 from torch._export import capture_pre_autograd_graph, dynamic_dim
 
-"""
-quantization:
-  backend: 'x86'
-  device: 'cpu'
-  method: 'static'
-  calibration_batches: 10
-  evaluation_batches: 20
+from loguru import logger
 
-model:
-  input_shape: [1, 28, 28]  # [channels, height, width]
+class Backend(Enum):
+    X86 = 'x86'
+    FBGEMM = 'fbgemm'
+    QNNPACK = 'qnnpack'
 
-data:
-  batch_size: 32
-  num_samples: 10000  # Total number of samples to generate
-
-logging:
-  level: 'INFO'
-  output_file: 'quantization.log'
-
-training:
-  learning_rate: 0.001
-  num_epochs: 5
-
-save_path: 'quantized_model.pth'
-"""
+class QuantizationMethod(Enum):
+    STATIC = 'static'
+    DYNAMIC = 'dynamic'
+    QAT = 'qat'
+    PT2E_STATIC = 'pt2e_static'
+    PT2E_QAT = 'pt2e_qat'
 
 @dataclass
 class Config:
-    backend: str
+    backend: Backend
     device: str
-    method: str
+    method: QuantizationMethod
     calibration_batches: int
     evaluation_batches: int
     input_shape: List[int]
@@ -72,7 +60,21 @@ class Config:
     def from_yaml(cls, yaml_file: str) -> 'Config':
         with open(yaml_file, 'r') as f:
             data = yaml.safe_load(f)
-        return cls(**data['quantization'], **data['model'], **data['data'], **data['logging'], **data['training'])
+        return cls(
+            backend=Backend(data['backend']),
+            device=data['device'],
+            method=QuantizationMethod(data['method']),
+            calibration_batches=data['calibration_batches'],
+            evaluation_batches=data['evaluation_batches'],
+            input_shape=data['input_shape'],
+            batch_size=data['batch_size'],
+            num_samples=data['num_samples'],
+            log_level=data['log_level'],
+            log_file=data['log_file'],
+            learning_rate=data['learning_rate'],
+            num_epochs=data['num_epochs'],
+            save_path=data['save_path']
+        )
 
 class ConfigValidationError(Exception):
     pass
@@ -80,12 +82,6 @@ class ConfigValidationError(Exception):
 class ConfigValidator:
     @staticmethod
     def validate(config: Config) -> None:
-        if config.backend not in ['x86', 'fbgemm', 'qnnpack']:
-            raise ConfigValidationError(f"Unsupported backend: {config.backend}")
-        if config.device not in ['cpu', 'cuda']:
-            raise ConfigValidationError(f"Unsupported device: {config.device}")
-        if config.method not in ['static', 'dynamic', 'qat', 'pt2e_static', 'pt2e_qat']:
-            raise ConfigValidationError(f"Unsupported quantization method: {config.method}")
         if config.calibration_batches <= 0:
             raise ConfigValidationError("calibration_batches must be positive")
         if config.evaluation_batches <= 0:
@@ -103,15 +99,12 @@ class ConfigValidator:
 
 class QuantizationError(Exception):
     """Base class for quantization-related errors."""
-    pass
 
 class CalibrationError(QuantizationError):
     """Raised when there's an error during model calibration."""
-    pass
 
 class BackendError(QuantizationError):
     """Raised when there's an error related to backend configuration."""
-    pass
 
 @dataclass
 class BackendConfig:
@@ -119,30 +112,27 @@ class BackendConfig:
     dtype_configs: Dict[str, Any]
 
 class BackendManager:
-    def __init__(self, backend: str):
+    def __init__(self, backend: Backend):
         self.backend = backend
         self.backend_config = self._get_backend_config()
 
     def _get_backend_config(self) -> Any:
-        if self.backend == 'x86':
+        if self.backend == Backend.X86:
             return backend_config.get_native_backend_config()
-        elif self.backend == 'fbgemm':
+        elif self.backend == Backend.FBGEMM:
             return backend_config.get_fbgemm_backend_config()
-        elif self.backend == 'qnnpack':
+        elif self.backend == Backend.QNNPACK:
             return backend_config.get_qnnpack_backend_config()
         else:
             raise BackendError(f"Unsupported backend: {self.backend}")
 
     def get_quantizer(self) -> TorchQuantizer:
-        if self.backend == 'x86':
+        if self.backend == Backend.X86:
             return XNNPACKQuantizer()
-        elif self.backend in ['fbgemm', 'qnnpack']:
+        elif self.backend in [Backend.FBGEMM, Backend.QNNPACK]:
             raise NotImplementedError(f"Quantizer for {self.backend} is not implemented yet.")
         else:
             raise BackendError(f"Unsupported backend: {self.backend}")
-
-    def create_custom_backend_config(self, config: BackendConfig) -> BackendConfig:
-        return BackendConfig(**config.__dict__)
 
 class NonTraceableModule(nn.Module):
     def __init__(self, forward_func: Callable):
@@ -232,7 +222,7 @@ class NumericSuite:
                 plt.title(f"Quantized Activations: {layer_name}")
                 plt.tight_layout()
                 plt.show()
-
+    
     @staticmethod
     def compare_activation_distributions(float_model: nn.Module, quantized_model: nn.Module, inputs: Any) -> Dict[str, Dict[str, np.ndarray]]:
         float_activations = NumericSuite.get_activation_values(float_model, inputs)
@@ -264,6 +254,76 @@ class NumericSuite:
             model(inputs)
 
         return activations
+
+    @staticmethod
+    def compare_models(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
+        comparison_results = {}
+        
+        # Compare model architectures
+        comparison_results["architecture_diff"] = NumericSuite._compare_architectures(model1, model2)
+        
+        # Compare model outputs
+        comparison_results["output_diff"] = NumericSuite._compare_outputs(model1, model2, example_inputs)
+        
+        # Compare model parameters
+        comparison_results["parameter_diff"] = NumericSuite._compare_parameters(model1, model2)
+        
+        return comparison_results
+    
+    @staticmethod
+    def _compare_architectures(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+        def get_architecture_string(model: nn.Module) -> str:
+            return str(model)
+        
+        arch1 = get_architecture_string(model1)
+        arch2 = get_architecture_string(model2)
+        
+        return {
+            "model1_architecture": arch1,
+            "model2_architecture": arch2,
+            "architectures_match": arch1 == arch2
+        }
+    
+    @staticmethod
+    def _compare_outputs(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
+        model1.eval()
+        model2.eval()
+        
+        with torch.no_grad():
+            output1 = model1(example_inputs)
+            output2 = model2(example_inputs)
+        
+        if isinstance(output1, tuple):
+            output1 = output1[0]
+        if isinstance(output2, tuple):
+            output2 = output2[0]
+        
+        mae = torch.mean(torch.abs(output1 - output2)).item()
+        mse = torch.mean((output1 - output2) ** 2).item()
+        
+        return {
+            "mean_absolute_error": mae,
+            "mean_squared_error": mse
+        }
+    
+    @staticmethod
+    def _compare_parameters(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+        params1 = dict(model1.named_parameters())
+        params2 = dict(model2.named_parameters())
+        
+        diff_stats = {}
+        for name in params1.keys():
+            if name in params2:
+                param1 = params1[name]
+                param2 = params2[name]
+                diff = torch.abs(param1 - param2)
+                diff_stats[name] = {
+                    "mean_diff": torch.mean(diff).item(),
+                    "max_diff": torch.max(diff).item(),
+                    "min_diff": torch.min(diff).item()
+                }
+        
+        return diff_stats
 
 class ModelEvaluator:
     @staticmethod
@@ -445,77 +505,7 @@ class ModelEvaluator:
         
         return profiling_results
 
-    @staticmethod
-    def compare_models(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
-        comparison_results = {}
-        
-        # Compare model architectures
-        comparison_results["architecture_diff"] = ModelEvaluator._compare_architectures(model1, model2)
-        
-        # Compare model outputs
-        comparison_results["output_diff"] = ModelEvaluator._compare_outputs(model1, model2, example_inputs)
-        
-        # Compare model parameters
-        comparison_results["parameter_diff"] = ModelEvaluator._compare_parameters(model1, model2)
-        
-        return comparison_results
-    
-    @staticmethod
-    def _compare_architectures(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
-        def get_architecture_string(model: nn.Module) -> str:
-            return str(model)
-        
-        arch1 = get_architecture_string(model1)
-        arch2 = get_architecture_string(model2)
-        
-        return {
-            "model1_architecture": arch1,
-            "model2_architecture": arch2,
-            "architectures_match": arch1 == arch2
-        }
-    
-    @staticmethod
-    def _compare_outputs(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
-        model1.eval()
-        model2.eval()
-        
-        with torch.no_grad():
-            output1 = model1(example_inputs)
-            output2 = model2(example_inputs)
-        
-        if isinstance(output1, tuple):
-            output1 = output1[0]
-        if isinstance(output2, tuple):
-            output2 = output2[0]
-        
-        mae = torch.mean(torch.abs(output1 - output2)).item()
-        mse = torch.mean((output1 - output2) ** 2).item()
-        
-        return {
-            "mean_absolute_error": mae,
-            "mean_squared_error": mse
-        }
-    
-    @staticmethod
-    def _compare_parameters(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
-        params1 = dict(model1.named_parameters())
-        params2 = dict(model2.named_parameters())
-        
-        diff_stats = {}
-        for name in params1.keys():
-            if name in params2:
-                param1 = params1[name]
-                param2 = params2[name]
-                diff = torch.abs(param1 - param2)
-                diff_stats[name] = {
-                    "mean_diff": torch.mean(diff).item(),
-                    "max_diff": torch.max(diff).item(),
-                    "min_diff": torch.min(diff).item()
-                }
-        
-        return diff_stats
-
-class QuantizationMethod(ABC):
+class BaseQuantizationMethod(ABC):
     def __init__(self, quantizer: 'Quantizer'):
         self.quantizer = quantizer
 
@@ -523,8 +513,15 @@ class QuantizationMethod(ABC):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         pass
 
-class StaticQuantization(QuantizationMethod):
+    def prepare_model(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        """Common preparation steps for all quantization methods."""
+        model = self.quantizer.handle_non_traceable(model)
+        self.quantizer.update_qconfig_mapping(model)
+        return self.quantizer.auto_fuse_modules(model)
+
+class StaticQuantization(BaseQuantizationMethod):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
         model.eval()
         logger.info("Preparing model for static quantization")
         prepared_model = tqfx.prepare_fx(model, self.quantizer.qconfig_mapping, example_inputs)
@@ -533,8 +530,9 @@ class StaticQuantization(QuantizationMethod):
         logger.info("Converting model to static quantized version")
         return tqfx.convert_fx(prepared_model)
 
-class DynamicQuantization(QuantizationMethod):
+class DynamicQuantization(BaseQuantizationMethod):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
         logger.info("Starting dynamic quantization")
         qconfig_spec = {
             nn.Linear: per_channel_dynamic_qconfig,
@@ -550,23 +548,25 @@ class DynamicQuantization(QuantizationMethod):
         logger.info("Converting model to dynamic quantized version using FX")
         return tqfx.convert_fx(prepared_model)
 
-class QuantizationAwareTraining(QuantizationMethod):
+class QuantizationAwareTraining(BaseQuantizationMethod):
     def __init__(self, quantizer: 'Quantizer', train_function: Callable):
         super().__init__(quantizer)
         self.train_function = train_function
 
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
         model.train()
         logger.info("Preparing model for quantization-aware training")
         prepared_model = tqfx.prepare_qat_fx(model, self.quantizer.qconfig_mapping, example_inputs)
         logger.info("Starting quantization-aware training")
-        self.train_function(prepared_model)  # User-provided training function
+        self.train_function(prepared_model)
         prepared_model.eval()
         logger.info("Converting model to quantized version after QAT")
         return tqfx.convert_fx(prepared_model)
 
-class PT2EStaticQuantization(QuantizationMethod):
+class PT2EStaticQuantization(BaseQuantizationMethod):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
         logger.info("Starting PT2E static quantization")
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = tqpt2e.prepare_pt2e(exported_model, self.quantizer.quantizer)
@@ -575,12 +575,13 @@ class PT2EStaticQuantization(QuantizationMethod):
         tq.move_exported_model_to_eval(quantized_model)
         return quantized_model
 
-class PT2EQuantizationAwareTraining(QuantizationMethod):
+class PT2EQuantizationAwareTraining(BaseQuantizationMethod):
     def __init__(self, quantizer: 'Quantizer', train_function: Callable):
         super().__init__(quantizer)
         self.train_function = train_function
 
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
         logger.info("Starting PT2E quantization-aware training")
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = tqpt2e.prepare_qat_pt2e(exported_model, self.quantizer.quantizer)
@@ -590,15 +591,15 @@ class PT2EQuantizationAwareTraining(QuantizationMethod):
         return quantized_model
 
 class Quantizer:
-    def __init__(self, backend_manager: BackendManager, backend: str):
+    def __init__(self, backend_manager: BackendManager, backend: Backend):
         self.backend_manager = backend_manager
         self.backend = backend
         self.qconfig_mapping = self._get_default_qconfig_mapping()
-        self.quantizer = self.backend_manager.get_quantizer(backend)
+        self.quantizer = self.backend_manager.get_quantizer()
         self.numeric_suite = NumericSuite()
 
     def _get_default_qconfig_mapping(self) -> tq.QConfigMapping:
-        return get_default_qconfig_mapping(self.backend)
+        return get_default_qconfig_mapping(self.backend.value)
 
     def set_qconfig_mapping(self, qconfig_mapping: tq.QConfigMapping) -> None:
         self.qconfig_mapping = qconfig_mapping
@@ -641,7 +642,7 @@ class Quantizer:
                 setattr(model, name, self.handle_non_traceable(module))
         return model
 
-    def determine_best_quantization_method(self, model: nn.Module, example_inputs: Any, comparison_results: Dict[str, Dict[str, Any]]) -> str:
+    def determine_best_quantization_method(self, model: nn.Module, example_inputs: Any, comparison_results: Dict[str, Dict[str, Any]]) -> QuantizationMethod:
         logger.info("Determining the best quantization method")
         
         if not comparison_results:
@@ -670,15 +671,15 @@ class Quantizer:
         
         best_method = max(scores, key=scores.get)
         logger.info(f"Best quantization method determined: {best_method}")
-        return best_method
+        return QuantizationMethod(best_method)
 
-    def _heuristic_based_selection(self, model: nn.Module) -> str:
+    def _heuristic_based_selection(self, model: nn.Module) -> QuantizationMethod:
         if any(isinstance(m, (nn.LSTM, nn.GRU)) for m in model.modules()):
-            return 'dynamic'
+            return QuantizationMethod.DYNAMIC
         elif any(isinstance(m, nn.Conv2d) for m in model.modules()):
-            return 'static'
+            return QuantizationMethod.STATIC
         else:
-            return 'weight_only'
+            return QuantizationMethod.DYNAMIC
 
     def update_qconfig_mapping(self, model: nn.Module) -> None:
         logger.info("Updating qconfig mapping based on model architecture")
@@ -726,18 +727,18 @@ class Quantizer:
 
 class QuantizationMethodFactory:
     @staticmethod
-    def create(method: str, quantizer: Quantizer, train_function: Optional[Callable] = None) -> QuantizationMethod:
-        if method == 'static':
+    def create(method: QuantizationMethod, quantizer: Quantizer, train_function: Optional[Callable] = None) -> BaseQuantizationMethod:
+        if method == QuantizationMethod.STATIC:
             return StaticQuantization(quantizer)
-        elif method == 'dynamic':
+        elif method == QuantizationMethod.DYNAMIC:
             return DynamicQuantization(quantizer)
-        elif method == 'qat':
+        elif method == QuantizationMethod.QAT:
             if train_function is None:
                 raise ValueError("train_function must be provided for QAT")
             return QuantizationAwareTraining(quantizer, train_function)
-        elif method == 'pt2e_static':
+        elif method == QuantizationMethod.PT2E_STATIC:
             return PT2EStaticQuantization(quantizer)
-        elif method == 'pt2e_qat':
+        elif method == QuantizationMethod.PT2E_QAT:
             if train_function is None:
                 raise ValueError("train_function must be provided for PT2E QAT")
             return PT2EQuantizationAwareTraining(quantizer, train_function)
@@ -756,12 +757,12 @@ class QuantizationWrapper:
         self,
         model: nn.Module,
         example_inputs: Any,
-        quantization_type: str = 'static',
+        quantization_type: QuantizationMethod = QuantizationMethod.STATIC,
         calibration_data: Optional[Any] = None,
         eval_function: Optional[Callable] = None,
         train_function: Optional[Callable] = None
     ) -> Tuple[nn.Module, Dict[str, Any]]:
-        logger.info(f"Starting {quantization_type} quantization")
+        logger.info(f"Starting {quantization_type.value} quantization")
         
         try:
             model = self._prepare_model(model)
@@ -782,7 +783,7 @@ class QuantizationWrapper:
         self.quantizer.update_qconfig_mapping(model)
         return self.quantizer.auto_fuse_modules(model)
 
-    def _quantize_model(self, model: nn.Module, example_inputs: Any, quantization_type: str, train_function: Optional[Callable]) -> nn.Module:
+    def _quantize_model(self, model: nn.Module, example_inputs: Any, quantization_type: QuantizationMethod, train_function: Optional[Callable]) -> nn.Module:
         quantization_method = QuantizationMethodFactory.create(
             quantization_type, 
             self.quantizer, 
@@ -806,7 +807,7 @@ class QuantizationWrapper:
         self, 
         model: nn.Module, 
         example_inputs: Any, 
-        methods: List[str],
+        methods: List[QuantizationMethod],
         train_function: Optional[Callable] = None
     ) -> Dict[str, Dict[str, Any]]:
         results = {}
@@ -814,7 +815,7 @@ class QuantizationWrapper:
             quantization_method = QuantizationMethodFactory.create(method, self.quantizer, train_function)
             quantized_model = quantization_method.quantize(model, example_inputs)
             metrics = self.model_evaluator.evaluate_model(model, quantized_model, example_inputs, self.config.device)
-            results[method] = metrics
+            results[method.value] = metrics
         return results
 
     def visualize_comparison_results(self, results: Dict[str, Dict[str, Any]]) -> None:
@@ -842,10 +843,10 @@ class QuantizationWrapper:
         plt.tight_layout()
         plt.show()
 
-    def auto_select_best_method(self, results: Dict[str, Dict[str, Any]]) -> str:
+    def auto_select_best_method(self, results: Dict[str, Dict[str, Any]]) -> QuantizationMethod:
         best_method = max(results, key=lambda x: results[x]['size_reduction'] * results[x]['latency']['fp32_latency'] / results[x]['latency']['int8_latency'] / (1 + results[x]['accuracy']['relative_difference']))
         logger.info(f"Automatically selected best method: {best_method}")
-        return best_method
+        return QuantizationMethod(best_method)
 
 class SimpleCNN(nn.Module):
     def __init__(self, input_shape: List[int]):
@@ -932,7 +933,7 @@ def main():
                 optimizer.step()
 
     # Compare different quantization methods
-    methods_to_compare = ['static', 'dynamic', 'qat', 'pt2e_static', 'pt2e_qat']
+    methods_to_compare = [QuantizationMethod.STATIC, QuantizationMethod.DYNAMIC, QuantizationMethod.QAT, QuantizationMethod.PT2E_STATIC, QuantizationMethod.PT2E_QAT]
     comparison_results = qw.compare_quantization_methods(model, example_inputs, methods_to_compare, train_function)
     logger.info("Quantization method comparison results:")
     for method, metrics in comparison_results.items():
@@ -983,12 +984,6 @@ def main():
     )
     logger.info("Quantization profiling results:")
     for key, value in profiling_results.items():
-        logger.info(f"{key}: {value}")
-
-    # Compare original and quantized models
-    model_comparison = ModelEvaluator.compare_models(model, quantized_model, example_inputs)
-    logger.info("Model comparison results:")
-    for key, value in model_comparison.items():
         logger.info(f"{key}: {value}")
 
     logger.info("Quantization process completed successfully.")

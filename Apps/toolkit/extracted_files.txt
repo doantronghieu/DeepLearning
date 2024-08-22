@@ -24,5 +24,3 @@ training:
 save_path: 'quantized_model.pth'
 """
 
-We have duplicated class: QuantizationMethod (Enum) and QuantizationMethod
-I see some methods from original codebase (compare_activation_distributions, get_activation_values, compare_models, _compare_architectures, _compare_outputs, _compare_parameters) is missed, do we still need it
