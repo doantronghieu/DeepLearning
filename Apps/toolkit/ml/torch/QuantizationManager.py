@@ -1,6 +1,8 @@
+# My code
 import os
 import time
 import copy
+import re
 from loguru import logger
 from typing import Dict, Any, List, Union, Optional, Tuple, Callable, Type
 from abc import abstractmethod, ABC
@@ -59,6 +61,8 @@ class Config:
     num_epochs: int
     save_path: str
     custom_options: Dict[str, Any] = field(default_factory=dict)
+    quantization_bit_width: int = 8
+    quantization_scheme: str = 'symmetric'
 
     @classmethod
     def from_yaml(cls, yaml_file: str) -> 'Config':
@@ -96,6 +100,10 @@ class Config:
             raise ConfigValidationError("learning_rate must be positive")
         if self.num_epochs <= 0:
             raise ConfigValidationError("num_epochs must be positive")
+        if self.quantization_bit_width not in [4, 8]:
+            raise ConfigValidationError("quantization_bit_width must be either 4 or 8")
+        if self.quantization_scheme not in ['symmetric', 'asymmetric']:
+            raise ConfigValidationError("quantization_scheme must be either 'symmetric' or 'asymmetric'")
         
         if self.backend == Backend.QNNPACK and self.device.startswith('cuda'):
             raise ConfigValidationError("QNNPACK backend is not compatible with CUDA devices")
@@ -405,6 +413,40 @@ class NumericSuite:
                 plt.tight_layout()
                 plt.show()
 
+    @staticmethod
+    def visualize_quantization_effects_on_architecture(float_model: nn.Module, quantized_model: nn.Module):
+        import networkx as nx
+        import matplotlib.pyplot as plt
+
+        def create_graph(model: nn.Module) -> nx.DiGraph:
+            G = nx.DiGraph()
+            for name, module in model.named_modules():
+                if name:
+                    G.add_node(name, label=f"{name}\n{type(module).__name__}")
+                    parent = '.'.join(name.split('.')[:-1])
+                    if parent:
+                        G.add_edge(parent, name)
+            return G
+
+        G_float = create_graph(float_model)
+        G_quant = create_graph(quantized_model)
+
+        plt.figure(figsize=(20, 10))
+        plt.subplot(121)
+        pos = nx.spring_layout(G_float)
+        nx.draw(G_float, pos, with_labels=True, node_size=1000, node_color='lightblue', font_size=8, font_weight='bold')
+        nx.draw_networkx_labels(G_float, pos, {node: data['label'] for node, data in G_float.nodes(data=True)})
+        plt.title("Float Model Architecture")
+
+        plt.subplot(122)
+        pos = nx.spring_layout(G_quant)
+        nx.draw(G_quant, pos, with_labels=True, node_size=1000, node_color='lightgreen', font_size=8, font_weight='bold')
+        nx.draw_networkx_labels(G_quant, pos, {node: data['label'] for node, data in G_quant.nodes(data=True)})
+        plt.title("Quantized Model Architecture")
+
+        plt.tight_layout()
+        plt.show()
+
 class ModelEvaluator:
     @staticmethod
     def print_model_size(model: nn.Module, label: str = "") -> int:
@@ -651,6 +693,29 @@ class ModelEvaluator:
         
         return profiling_results
 
+    @staticmethod
+    def compare_quantized_model_performance_across_hardware(
+        quantized_model: nn.Module,
+        example_inputs: Any,
+        hardware_devices: List[str]
+    ) -> Dict[str, float]:
+        performance_results = {}
+        
+        for device in hardware_devices:
+            logger.info(f"Evaluating performance on {device}")
+            quantized_model = quantized_model.to(device)
+            example_inputs = example_inputs.to(device)
+            
+            start_time = time.time()
+            with torch.no_grad():
+                _ = quantized_model(example_inputs)
+            end_time = time.time()
+            
+            inference_time = end_time - start_time
+            performance_results[device] = inference_time
+        
+        return performance_results
+
 class BaseQuantizationMethod(ABC):
     def __init__(self, quantizer: 'Quantizer'):
         self.quantizer = quantizer
@@ -872,8 +937,6 @@ class QConfigManager:
                 self.set_module_qconfig(nn.Linear, default_dynamic_qconfig)
         logger.info("QConfig mapping updated")
 
-import re
-
 class ModelFuser:
     @staticmethod
     def fuse_modules(model: nn.Module, modules_to_fuse: List[List[str]]) -> nn.Module:
@@ -920,8 +983,13 @@ class CalibrationManager:
         prepared_model.eval()
         try:
             with torch.no_grad():
-                for batch in tqdm(calibration_data, desc="Calibrating"):
-                    prepared_model(*batch)
+                if isinstance(calibration_data, DataLoader):
+                    for batch in tqdm(calibration_data, desc="Calibrating"):
+                        prepared_model(*batch)
+                elif isinstance(calibration_data, torch.Tensor):
+                    prepared_model(calibration_data)
+                else:
+                    raise ValueError("Unsupported calibration data type. Expected DataLoader or Tensor.")
         except Exception as e:
             logger.error(f"Failed to calibrate model: {str(e)}")
             raise CalibrationError("Failed to calibrate model") from e
@@ -983,7 +1051,12 @@ class Quantizer:
         if any(isinstance(m, (nn.LSTM, nn.GRU)) for m in model.modules()):
             return QuantizationMethod.DYNAMIC
         elif any(isinstance(m, nn.Conv2d) for m in model.modules()):
-            return QuantizationMethod.STATIC
+            if self.backend == Backend.X86:
+                return QuantizationMethod.PT2E_STATIC
+            else:
+                return QuantizationMethod.STATIC
+        elif any(isinstance(m, nn.Linear) for m in model.modules()):
+            return QuantizationMethod.QAT
         else:
             return QuantizationMethod.DYNAMIC
 
@@ -1039,6 +1112,11 @@ class Quantizer:
         
         logger.info(f"Auto-tuning complete. Best accuracy: {best_accuracy}")
         return best_model
+
+    def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        method = self._heuristic_based_selection(model)
+        quantization_method = QuantizationMethodFactory.create(method, self)
+        return quantization_method.quantize(model, example_inputs)
 
 class QuantizationMethodFactory:
     @staticmethod
@@ -1189,6 +1267,14 @@ class QuantizationWrapper:
         plt.tight_layout()
         plt.show()
 
+class ModelFactory:
+    @staticmethod
+    def create_model(model_type: str, **kwargs) -> nn.Module:
+        if model_type == "SimpleCNN":
+            return SimpleCNN(**kwargs)
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+
 class SimpleCNN(nn.Module):
     def __init__(self, input_shape: List[int], num_classes: int = 1):
         super(SimpleCNN, self).__init__()
@@ -1258,10 +1344,14 @@ class ModelStorageManager:
         version = self.versions['latest'] + 1
         model_path = os.path.join(self.base_path, f'model_v{version}.pth')
         
-        if use_jit:
-            torch.jit.save(torch.jit.script(model), model_path)
-        else:
-            torch.save(model.state_dict(), model_path)
+        try:
+            if use_jit:
+                torch.jit.save(torch.jit.script(model), model_path)
+            else:
+                torch.save(model.state_dict(), model_path)
+        except Exception as e:
+            logger.error(f"Failed to save model: {str(e)}")
+            raise ModelStorageError("Failed to save model") from e
         
         self.versions['latest'] = version
         self.versions['models'][version] = {
@@ -1281,11 +1371,15 @@ class ModelStorageManager:
         
         model_info = self.versions['models'][version]
         
-        if use_jit:
-            model = torch.jit.load(model_info['path'])
-        else:
-            model = model_class()
-            model.load_state_dict(torch.load(model_info['path']))
+        try:
+            if use_jit:
+                model = torch.jit.load(model_info['path'])
+            else:
+                model = model_class()
+                model.load_state_dict(torch.load(model_info['path']))
+        except Exception as e:
+            logger.error(f"Failed to load model: {str(e)}")
+            raise ModelStorageError("Failed to load model") from e
         
         return model, model_info['metadata']
 
@@ -1305,7 +1399,7 @@ def main():
     data_manager = DataManager(config)
 
     # Create model
-    model = SimpleCNN(config.input_shape)
+    model = ModelFactory.create_model(config.model_type, input_shape=config.input_shape, num_classes=1)
 
     # Create datasets
     train_dataset, test_dataset = data_manager.create_binary_dataset()
@@ -1380,6 +1474,7 @@ def main():
 
     # Visualize quantization effects
     NumericSuite.visualize_quantization_effects(model, quantized_model)
+    NumericSuite.visualize_quantization_effects_on_architecture(model, quantized_model)
 
     # Profile quantization
     profiling_results = ModelEvaluator.profile_quantization(
@@ -1401,6 +1496,17 @@ def main():
     logger.info("Model robustness results:")
     for key, value in robustness_results.items():
         logger.info(f"{key}: {value}")
+
+    # Compare quantized model performance across different hardware
+    hardware_devices = ['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']
+    performance_results = ModelEvaluator.compare_quantized_model_performance_across_hardware(
+        quantized_model,
+        example_inputs,
+        hardware_devices
+    )
+    logger.info("Quantized model performance across hardware:")
+    for device, inference_time in performance_results.items():
+        logger.info(f"{device}: {inference_time:.6f} seconds")
 
     # Get model version history
     model_history = storage_manager.get_model_history()

@@ -1,48 +1,42 @@
 """
-# Quantization backend
-backend: 'x86'
-
-# Device to use for computation
-device: 'cpu'
-
-# Quantization method
-method: 'static'
-
-# Number of batches to use for calibration
-calibration_batches: 10
-
-# Number of batches to use for evaluation
-evaluation_batches: 50
-
-# Input shape for the model (channels, height, width)
+# General configuration
+backend: x86
+device: cuda
+method: static
+model_type: SimpleCNN
 input_shape: [3, 224, 224]
-
-# Batch size for training and evaluation
 batch_size: 32
-
-# Total number of samples to generate for the dataset
 num_samples: 10000
+log_level: INFO
+log_file: quantization.log
+save_path: ./saved_models
 
-# Logging level
-log_level: 'INFO'
+# Quantization-specific configuration
+quantization_bit_width: 8
+quantization_scheme: symmetric
+per_channel: true
+calibration_batches: 100
+evaluation_batches: 100
+qat_epochs: 10
+qat_learning_rate: 0.001
+observer_type: minmax
+activation_quantization: true
+weight_quantization: true
+bias_quantization: false
+quantization_aware_training: false
+dynamic_range_quantization: false
 
-# Log file path
-log_file: 'quantization.log'
+# Performance optimization
+num_workers: 4
+pin_memory: true
 
-# Learning rate for training (if applicable)
-learning_rate: 0.001
+# Model-specific configuration
+num_classes: 1000
 
-# Number of epochs for training (if applicable)
-num_epochs: 5
-
-# Path to save quantized models
-save_path: './quantized_models'
-
-# Custom options (can be extended as needed)
+# Custom options
 custom_options:
-  use_cuda: false
-  seed: 42
-  num_workers: 4
+  use_custom_calibration: false
+  custom_calibration_method: kl_divergence
 """
 
 
