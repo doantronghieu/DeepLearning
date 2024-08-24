@@ -1,0 +1,46 @@
+Conduct a comprehensive review of my codebase and associated documentation to ensure full alignment with the original specifications. Your review should include:
+
+1. Documentation Review:
+   - Meticulously re-examine all documents, ensuring no details are overlooked.
+   - Identify any ambiguities or inconsistencies within the documentation.
+
+2. Functionality Verification:
+   - Confirm that all functionalities described in the documentation are fully implemented in the codebase.
+   - Identify any documented features that are missing or incomplete in the code.
+
+3. Dependency Analysis:
+   - Verify that all imported dependencies (classes, functions, libraries, etc.) mentioned in the documents are effectively and fully utilized in the code.
+   - Identify any unused or unnecessary dependencies.
+
+4. Code-Documentation Alignment:
+   - Identify any discrepancies between the documentation and the codebase.
+   - Note any code functionalities that are not documented.
+   - If deemed necessary, suggest additional utility methods, attributes, or classes to enhance the usability and completeness of the codebase. These suggestions should:
+     * Align with the documentation's explicit requirements
+     * Follow the documentation's spirit and implied intentions
+     * Enhance the overall coherence between code and documentation
+
+5. Code Quality and Design:
+   - Evaluate the code's adherence to industry-standard best practices in:
+     * System design principles (e.g., SOLID principles)
+     * Software development methodologies (e.g., Agile, TDD)
+     * Software architecture patterns (e.g., MVC, microservices)
+   - Assess code quality metrics such as complexity, cohesion, and coupling
+   - Evaluate and suggest improvements for code readability, maintainability, and scalability.
+   - Ensure the code is general-purpose, flexible, modular, easily extendable, and domain-agnostic, making it adaptable for various use cases and future enhancements.
+
+6. Performance and Efficiency:
+   - Identify potential performance bottlenecks or inefficient implementations.
+   - Suggest optimizations where applicable, considering both time and space complexity.
+
+Please provide a detailed report of your findings, including:
+- Overlooked details from the documentation
+- Functionalities that are not fully implemented
+- Underutilized, missing, or unnecessary dependencies
+- Discrepancies between code and documentation
+- Recommendations for enhancing code flexibility, generalizability, and adherence to best practices
+- Suggestions for performance improvements
+- Proposed additional utility methods, attributes, or classes (if necessary) to complement the existing codebase
+- A refactored version of the full source code incorporating your recommended changes
+
+Note: When suggesting additional utility methods, attributes, or classes, please only do so if you believe they are truly necessary to enhance the usability and completeness of the codebase in alignment with both the explicit requirements and the implied spirit of the documentation.

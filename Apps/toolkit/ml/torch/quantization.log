@@ -1,0 +1,1655 @@
+2024-08-25 05:41:33.288 | INFO     | __main__:quantize_and_evaluate:1106 - Starting static quantization
+2024-08-25 05:41:33.359 | WARNING  | __main__:_recursive_handle:256 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:41:33.383 | WARNING  | __main__:_recursive_handle:256 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:41:33.387 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.387 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.388 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.419 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.436 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.441 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.441 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.441 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.441 | INFO     | __main__:quantize:985 - Preparing model for static quantization
+2024-08-25 05:41:33.447 | ERROR    | __main__:quantize_and_evaluate:1143 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:41:33.447 | ERROR    | __main__:compare_quantization_methods:1174 - Error during comparison of static: Quantization process failed
+2024-08-25 05:41:33.448 | INFO     | __main__:quantize_and_evaluate:1106 - Starting dynamic quantization
+2024-08-25 05:41:33.478 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.495 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.502 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.502 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.502 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.533 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.550 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.555 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.555 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.555 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.555 | INFO     | __main__:quantize:995 - Starting dynamic quantization
+2024-08-25 05:41:33.555 | INFO     | __main__:quantize:1002 - Preparing model for dynamic quantization using FX
+2024-08-25 05:41:33.556 | ERROR    | __main__:quantize_and_evaluate:1143 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:41:33.557 | ERROR    | __main__:compare_quantization_methods:1174 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 05:41:33.557 | INFO     | __main__:quantize_and_evaluate:1106 - Starting qat quantization
+2024-08-25 05:41:33.591 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.606 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.612 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.612 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.613 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.666 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.683 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.688 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.688 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.688 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.688 | INFO     | __main__:quantize:1026 - Preparing model for quantization-aware training
+2024-08-25 05:41:33.689 | ERROR    | __main__:quantize_and_evaluate:1143 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:41:33.689 | ERROR    | __main__:compare_quantization_methods:1174 - Error during comparison of qat: Quantization process failed
+2024-08-25 05:41:33.690 | INFO     | __main__:quantize_and_evaluate:1106 - Starting pt2e_static quantization
+2024-08-25 05:41:33.718 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.733 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.738 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.738 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.738 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.767 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:33.785 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:33.791 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:33.791 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:33.791 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:33.791 | INFO     | __main__:quantize:1039 - Starting PT2E static quantization
+2024-08-25 05:41:34.029 | ERROR    | __main__:quantize_and_evaluate:1143 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1245, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:41:34.030 | ERROR    | __main__:compare_quantization_methods:1174 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 05:41:34.030 | INFO     | __main__:quantize_and_evaluate:1106 - Starting pt2e_qat quantization
+2024-08-25 05:41:34.079 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:34.095 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:34.100 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:34.100 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:34.100 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:34.132 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:41:34.150 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:41:34.155 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:41:34.155 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:41:34.155 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:41:34.155 | INFO     | __main__:quantize:1054 - Starting PT2E quantization-aware training
+2024-08-25 05:41:34.168 | ERROR    | __main__:quantize_and_evaluate:1143 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1245, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:41:34.168 | ERROR    | __main__:compare_quantization_methods:1174 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 05:41:34.168 | INFO     | __main__:main:1529 - Quantization method comparison results:
+2024-08-25 05:41:34.168 | INFO     | __main__:main:1531 - static: {'error': 'Quantization process failed'}
+2024-08-25 05:41:34.168 | INFO     | __main__:main:1531 - dynamic: {'error': 'Quantization process failed'}
+2024-08-25 05:41:34.168 | INFO     | __main__:main:1531 - qat: {'error': 'Quantization process failed'}
+2024-08-25 05:41:34.169 | INFO     | __main__:main:1531 - pt2e_static: {'error': 'Quantization process failed'}
+2024-08-25 05:41:34.169 | INFO     | __main__:main:1531 - pt2e_qat: {'error': 'Quantization process failed'}
+2024-08-25 05:50:17.956 | INFO     | __main__:quantize_and_evaluate:1105 - Starting static quantization
+2024-08-25 05:50:18.085 | WARNING  | __main__:_recursive_handle:256 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:50:18.109 | WARNING  | __main__:_recursive_handle:256 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:50:18.117 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.117 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.117 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.148 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.164 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.170 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.170 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.170 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.170 | INFO     | __main__:quantize:984 - Preparing model for static quantization
+2024-08-25 05:50:18.177 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:50:18.177 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of static: Quantization process failed
+2024-08-25 05:50:18.178 | INFO     | __main__:quantize_and_evaluate:1105 - Starting dynamic quantization
+2024-08-25 05:50:18.203 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.215 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.221 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.221 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.221 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.248 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.261 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.267 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.267 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.267 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.267 | INFO     | __main__:quantize:994 - Starting dynamic quantization
+2024-08-25 05:50:18.267 | INFO     | __main__:quantize:1001 - Preparing model for dynamic quantization using FX
+2024-08-25 05:50:18.268 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:50:18.268 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 05:50:18.269 | INFO     | __main__:quantize_and_evaluate:1105 - Starting qat quantization
+2024-08-25 05:50:18.299 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.314 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.319 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.320 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.320 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.349 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.362 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.368 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.368 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.368 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.368 | INFO     | __main__:quantize:1025 - Preparing model for quantization-aware training
+2024-08-25 05:50:18.369 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:50:18.369 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of qat: Quantization process failed
+2024-08-25 05:50:18.370 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_static quantization
+2024-08-25 05:50:18.396 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.411 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.419 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.420 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.420 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.446 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.461 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.468 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.469 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.469 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.469 | INFO     | __main__:quantize:1038 - Starting PT2E static quantization
+2024-08-25 05:50:18.751 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=25088, out_features=2, bias=True), FakeTensor(..., size=(32, 784), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 784] X [25088, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1250, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:50:18.751 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 05:50:18.752 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_qat quantization
+2024-08-25 05:50:18.804 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.818 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.822 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.822 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.822 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.854 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:50:18.865 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:50:18.870 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:50:18.871 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:50:18.871 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:50:18.871 | INFO     | __main__:quantize:1053 - Starting PT2E quantization-aware training
+2024-08-25 05:50:18.884 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=25088, out_features=2, bias=True), FakeTensor(..., size=(32, 784), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 784] X [25088, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1250, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:50:18.884 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1534 - Quantization method comparison results:
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1536 - static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1536 - dynamic: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1536 - qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1536 - pt2e_static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:50:18.884 | INFO     | __main__:main:1536 - pt2e_qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:52:24.584 | INFO     | __main__:quantize_and_evaluate:1105 - Starting static quantization
+2024-08-25 05:52:24.697 | WARNING  | __main__:_recursive_handle:256 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:52:24.721 | WARNING  | __main__:_recursive_handle:256 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:52:24.727 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.727 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.727 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.755 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:24.770 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:24.775 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.775 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.775 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.776 | INFO     | __main__:quantize:984 - Preparing model for static quantization
+2024-08-25 05:52:24.784 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:52:24.784 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of static: Quantization process failed
+2024-08-25 05:52:24.785 | INFO     | __main__:quantize_and_evaluate:1105 - Starting dynamic quantization
+2024-08-25 05:52:24.814 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:24.826 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:24.832 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.832 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.832 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.865 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:24.880 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:24.885 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.885 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.885 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.885 | INFO     | __main__:quantize:994 - Starting dynamic quantization
+2024-08-25 05:52:24.885 | INFO     | __main__:quantize:1001 - Preparing model for dynamic quantization using FX
+2024-08-25 05:52:24.886 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:52:24.887 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 05:52:24.887 | INFO     | __main__:quantize_and_evaluate:1105 - Starting qat quantization
+2024-08-25 05:52:24.913 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:24.927 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:24.933 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.933 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.933 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.961 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:24.976 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:24.981 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:24.981 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:24.981 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:24.981 | INFO     | __main__:quantize:1025 - Preparing model for quantization-aware training
+2024-08-25 05:52:24.982 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: parameter is not a member of this module
+2024-08-25 05:52:24.982 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of qat: Quantization process failed
+2024-08-25 05:52:24.983 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_static quantization
+2024-08-25 05:52:25.010 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:25.023 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:25.031 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:25.031 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:25.031 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:25.057 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:25.073 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:25.079 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:25.079 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:25.079 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:25.079 | INFO     | __main__:quantize:1038 - Starting PT2E static quantization
+2024-08-25 05:52:25.327 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=25088, out_features=2, bias=True), FakeTensor(..., size=(32, 784), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 784] X [25088, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1261, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:52:25.327 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 05:52:25.328 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_qat quantization
+2024-08-25 05:52:25.383 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:25.398 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:25.404 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:25.404 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:25.404 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:25.433 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:52:25.446 | INFO     | __main__:_recursive_handle:248 - Already wrapped non-traceable module found: fc
+2024-08-25 05:52:25.451 | INFO     | __main__:update_qconfig_mapping:924 - Updating qconfig mapping based on model architecture
+2024-08-25 05:52:25.452 | INFO     | __main__:update_qconfig_mapping:930 - QConfig mapping updated
+2024-08-25 05:52:25.452 | INFO     | __main__:auto_fuse_modules:933 - Automatically fusing modules
+2024-08-25 05:52:25.452 | INFO     | __main__:quantize:1053 - Starting PT2E quantization-aware training
+2024-08-25 05:52:25.465 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=25088, out_features=2, bias=True), FakeTensor(..., size=(32, 784), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 784] X [25088, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1261, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 214, in forward
+    return self.forward_func(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:52:25.465 | ERROR    | __main__:compare_quantization_methods:1173 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1545 - Quantization method comparison results:
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1547 - static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1547 - dynamic: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1547 - qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1547 - pt2e_static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:52:25.465 | INFO     | __main__:main:1547 - pt2e_qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:20.268 | INFO     | __main__:quantize_and_evaluate:1094 - Starting static quantization
+2024-08-25 05:56:20.385 | WARNING  | __main__:_recursive_handle:257 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:56:20.409 | WARNING  | __main__:_recursive_handle:257 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 05:56:20.416 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.416 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.416 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.447 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.460 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.466 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.466 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.466 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.466 | INFO     | __main__:quantize:973 - Preparing model for static quantization
+2024-08-25 05:56:20.471 | ERROR    | __main__:quantize_and_evaluate:1131 - Error during quantization and evaluation: maximum recursion depth exceeded
+2024-08-25 05:56:20.488 | ERROR    | __main__:quantize_and_evaluate:1132 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1109, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 974, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 135, in _prepare_fx
+    graph_module = GraphModule(model, tracer.trace(model))
+                                      ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 793, in trace
+    (self.create_arg(fn(*args)),),
+                     ^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+                              ^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 771, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 495, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 764, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 215, in forward
+    return self.original_module(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 2981 more times]
+RecursionError: maximum recursion depth exceeded
+
+2024-08-25 05:56:20.488 | ERROR    | __main__:compare_quantization_methods:1163 - Error during comparison of static: Quantization process failed
+2024-08-25 05:56:20.489 | INFO     | __main__:quantize_and_evaluate:1094 - Starting dynamic quantization
+2024-08-25 05:56:20.520 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.533 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.538 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.539 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.539 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.566 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.581 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.587 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.587 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.587 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.587 | INFO     | __main__:quantize:983 - Starting dynamic quantization
+2024-08-25 05:56:20.587 | INFO     | __main__:quantize:990 - Preparing model for dynamic quantization using FX
+2024-08-25 05:56:20.590 | ERROR    | __main__:quantize_and_evaluate:1131 - Error during quantization and evaluation: maximum recursion depth exceeded
+2024-08-25 05:56:20.607 | ERROR    | __main__:quantize_and_evaluate:1132 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1109, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 991, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 135, in _prepare_fx
+    graph_module = GraphModule(model, tracer.trace(model))
+                                      ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 793, in trace
+    (self.create_arg(fn(*args)),),
+                     ^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+                              ^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 771, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 495, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 764, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 215, in forward
+    return self.original_module(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 2981 more times]
+RecursionError: maximum recursion depth exceeded
+
+2024-08-25 05:56:20.607 | ERROR    | __main__:compare_quantization_methods:1163 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 05:56:20.608 | INFO     | __main__:quantize_and_evaluate:1094 - Starting qat quantization
+2024-08-25 05:56:20.634 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.649 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.654 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.655 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.655 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.681 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.694 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.701 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.702 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.702 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.702 | INFO     | __main__:quantize:1014 - Preparing model for quantization-aware training
+2024-08-25 05:56:20.704 | ERROR    | __main__:quantize_and_evaluate:1131 - Error during quantization and evaluation: maximum recursion depth exceeded
+2024-08-25 05:56:20.720 | ERROR    | __main__:quantize_and_evaluate:1132 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1107, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1015, in quantize
+    prepared_model = tqfx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 489, in prepare_qat_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 135, in _prepare_fx
+    graph_module = GraphModule(model, tracer.trace(model))
+                                      ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 793, in trace
+    (self.create_arg(fn(*args)),),
+                     ^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+                              ^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 771, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 495, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/fx/_symbolic_trace.py", line 764, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 215, in forward
+    return self.original_module(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 2981 more times]
+RecursionError: maximum recursion depth exceeded
+
+2024-08-25 05:56:20.721 | ERROR    | __main__:compare_quantization_methods:1163 - Error during comparison of qat: Quantization process failed
+2024-08-25 05:56:20.721 | INFO     | __main__:quantize_and_evaluate:1094 - Starting pt2e_static quantization
+2024-08-25 05:56:20.749 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.762 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.768 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.768 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.768 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.796 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:20.810 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:20.817 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:20.817 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:20.817 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:20.817 | INFO     | __main__:quantize:1027 - Starting PT2E static quantization
+2024-08-25 05:56:21.046 | ERROR    | __main__:quantize_and_evaluate:1131 - Error during quantization and evaluation: maximum recursion depth exceeded
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:56:21.065 | ERROR    | __main__:quantize_and_evaluate:1132 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1109, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1028, in quantize
+    exported_model = capture_pre_autograd_graph(model, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_export/__init__.py", line 151, in capture_pre_autograd_graph
+    m = torch._dynamo.export(
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 1311, in inner
+    result_traced = opt_f(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 451, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 921, in catch_errors
+    return callback(frame, cache_entry, hooks, frame_state, skip=1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 400, in _convert_frame_assert
+    return _compile(
+           ^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 703, in _compile
+    raise InternalTorchDynamoError(str(e)).with_traceback(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 676, in _compile
+    guarded_code = compile_inner(code, one_graph, hooks, transform)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 262, in time_wrapper
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 535, in compile_inner
+    out_code = transform_code_object(code, transform)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/bytecode_transformation.py", line 1036, in transform_code_object
+    transformations(instructions, code_options)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 165, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 500, in transform
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2149, in run
+    super().run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1290, in LOAD_METHOD
+    self.LOAD_ATTR(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1311, in LOAD_ATTR
+    result = BuiltinVariable(getattr).call_function(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builtin.py", line 687, in call_function
+    result = handler(tx, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builtin.py", line 1265, in call_getattr
+    return obj.var_getattr(tx, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 217, in var_getattr
+    return VariableBuilder(tx, NNModuleSource(source))(subobj)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 269, in __call__
+    vt = self._wrap(value)
+         ^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 490, in _wrap
+    return self.wrap_module(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 898, in wrap_module
+    if mutation_guard.is_dynamic_nn_module(value):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/mutation_guard.py", line 91, in is_dynamic_nn_module
+    if hasattr(obj, "torchdynamo_force_dynamic"):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 2962 more times]
+torch._dynamo.exc.InternalTorchDynamoError: maximum recursion depth exceeded
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+
+2024-08-25 05:56:21.065 | ERROR    | __main__:compare_quantization_methods:1163 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 05:56:21.066 | INFO     | __main__:quantize_and_evaluate:1094 - Starting pt2e_qat quantization
+2024-08-25 05:56:21.120 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:21.134 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:21.139 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:21.139 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:21.139 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:21.166 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: conv2
+2024-08-25 05:56:21.179 | INFO     | __main__:_recursive_handle:249 - Already wrapped non-traceable module found: fc
+2024-08-25 05:56:21.184 | INFO     | __main__:update_qconfig_mapping:913 - Updating qconfig mapping based on model architecture
+2024-08-25 05:56:21.184 | INFO     | __main__:update_qconfig_mapping:919 - QConfig mapping updated
+2024-08-25 05:56:21.184 | INFO     | __main__:auto_fuse_modules:922 - Automatically fusing modules
+2024-08-25 05:56:21.185 | INFO     | __main__:quantize:1042 - Starting PT2E quantization-aware training
+2024-08-25 05:56:21.190 | ERROR    | __main__:quantize_and_evaluate:1131 - Error during quantization and evaluation: maximum recursion depth exceeded
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 05:56:21.208 | ERROR    | __main__:quantize_and_evaluate:1132 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1107, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1043, in quantize
+    exported_model = capture_pre_autograd_graph(model, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_export/__init__.py", line 151, in capture_pre_autograd_graph
+    m = torch._dynamo.export(
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 1311, in inner
+    result_traced = opt_f(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 451, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 921, in catch_errors
+    return callback(frame, cache_entry, hooks, frame_state, skip=1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 400, in _convert_frame_assert
+    return _compile(
+           ^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 703, in _compile
+    raise InternalTorchDynamoError(str(e)).with_traceback(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 676, in _compile
+    guarded_code = compile_inner(code, one_graph, hooks, transform)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 262, in time_wrapper
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 535, in compile_inner
+    out_code = transform_code_object(code, transform)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/bytecode_transformation.py", line 1036, in transform_code_object
+    transformations(instructions, code_options)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 165, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 500, in transform
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2149, in run
+    super().run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1290, in LOAD_METHOD
+    self.LOAD_ATTR(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1311, in LOAD_ATTR
+    result = BuiltinVariable(getattr).call_function(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builtin.py", line 687, in call_function
+    result = handler(tx, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builtin.py", line 1265, in call_getattr
+    return obj.var_getattr(tx, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 217, in var_getattr
+    return VariableBuilder(tx, NNModuleSource(source))(subobj)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 269, in __call__
+    vt = self._wrap(value)
+         ^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 490, in _wrap
+    return self.wrap_module(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 898, in wrap_module
+    if mutation_guard.is_dynamic_nn_module(value):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/mutation_guard.py", line 91, in is_dynamic_nn_module
+    if hasattr(obj, "torchdynamo_force_dynamic"):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 218, in __getattr__
+    return getattr(self.original_module, name)
+                   ^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 2962 more times]
+torch._dynamo.exc.InternalTorchDynamoError: maximum recursion depth exceeded
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1247, in forward
+    x = self.pool2(self.relu2(self.conv2(x)))
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+
+2024-08-25 05:56:21.209 | ERROR    | __main__:compare_quantization_methods:1163 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1534 - Quantization method comparison results:
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1536 - static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1536 - dynamic: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1536 - qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1536 - pt2e_static: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:21.209 | INFO     | __main__:main:1536 - pt2e_qat: {'error': 'Quantization process failed', 'size_reduction': 1.0, 'latency': {'fp32_latency': 0, 'int8_latency': 0}, 'accuracy': {'relative_difference': 1.0}}
+2024-08-25 05:56:27.490 | ERROR    | __main__:main:1644 - An error occurred in the main function: No valid quantization methods found
+2024-08-25 05:56:27.490 | ERROR    | __main__:main:1645 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1542, in main
+    best_method = qw.auto_select_best_method(comparison_results)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1177, in auto_select_best_method
+    raise QuantizationError("No valid quantization methods found")
+QuantizationError: No valid quantization methods found
+
+2024-08-25 06:02:44.432 | INFO     | __main__:quantize_and_evaluate:1097 - Starting static quantization
+2024-08-25 06:02:44.558 | WARNING  | __main__:_recursive_handle:260 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:02:44.582 | WARNING  | __main__:_recursive_handle:260 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:02:44.588 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.588 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.588 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.618 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.634 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.640 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.641 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.641 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.641 | INFO     | __main__:quantize:976 - Preparing model for static quantization
+2024-08-25 06:02:44.653 | ERROR    | __main__:quantize_and_evaluate:1134 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:02:44.654 | ERROR    | __main__:quantize_and_evaluate:1135 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1112, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 977, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:02:44.654 | ERROR    | __main__:compare_quantization_methods:1168 - Error during comparison of static: Quantization process failed
+2024-08-25 06:02:44.655 | INFO     | __main__:quantize_and_evaluate:1097 - Starting dynamic quantization
+2024-08-25 06:02:44.686 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.702 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.707 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.708 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.708 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.738 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.753 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.759 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.759 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.759 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.759 | INFO     | __main__:quantize:986 - Starting dynamic quantization
+2024-08-25 06:02:44.759 | INFO     | __main__:quantize:993 - Preparing model for dynamic quantization using FX
+2024-08-25 06:02:44.764 | ERROR    | __main__:quantize_and_evaluate:1134 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:02:44.764 | ERROR    | __main__:quantize_and_evaluate:1135 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1112, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 994, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:02:44.765 | ERROR    | __main__:compare_quantization_methods:1168 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 06:02:44.765 | INFO     | __main__:quantize_and_evaluate:1097 - Starting qat quantization
+2024-08-25 06:02:44.795 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.814 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.820 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.820 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.820 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.850 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.866 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.872 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.872 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.872 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.872 | INFO     | __main__:quantize:1017 - Preparing model for quantization-aware training
+2024-08-25 06:02:44.877 | ERROR    | __main__:quantize_and_evaluate:1134 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:02:44.878 | ERROR    | __main__:quantize_and_evaluate:1135 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1110, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1018, in quantize
+    prepared_model = tqfx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 489, in prepare_qat_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:02:44.878 | ERROR    | __main__:compare_quantization_methods:1168 - Error during comparison of qat: Quantization process failed
+2024-08-25 06:02:44.878 | INFO     | __main__:quantize_and_evaluate:1097 - Starting pt2e_static quantization
+2024-08-25 06:02:44.905 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.921 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.926 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.926 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.927 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.955 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:44.972 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:44.978 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:44.978 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:44.978 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:44.978 | INFO     | __main__:quantize:1030 - Starting PT2E static quantization
+2024-08-25 06:02:45.229 | ERROR    | __main__:quantize_and_evaluate:1134 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1248, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 216, in forward
+    return self._forward(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 06:02:45.234 | ERROR    | __main__:quantize_and_evaluate:1135 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1112, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1031, in quantize
+    exported_model = capture_pre_autograd_graph(model, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_export/__init__.py", line 151, in capture_pre_autograd_graph
+    m = torch._dynamo.export(
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 1311, in inner
+    result_traced = opt_f(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 451, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 921, in catch_errors
+    return callback(frame, cache_entry, hooks, frame_state, skip=1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 400, in _convert_frame_assert
+    return _compile(
+           ^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 676, in _compile
+    guarded_code = compile_inner(code, one_graph, hooks, transform)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 262, in time_wrapper
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 535, in compile_inner
+    out_code = transform_code_object(code, transform)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/bytecode_transformation.py", line 1036, in transform_code_object
+    transformations(instructions, code_options)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 165, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 500, in transform
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2149, in run
+    super().run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1802, in CALL
+    self.call_function(fn, args, kwargs)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 336, in call_function
+    return tx.inline_user_function_return(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 680, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2285, in inline_call
+    return cls.inline_call_(parent, func, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2399, in inline_call_
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1260, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 335, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 289, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 90, in call_function
+    return tx.inline_user_function_return(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 680, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2285, in inline_call
+    return cls.inline_call_(parent, func, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2399, in inline_call_
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1260, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 332, in call_function
+    return self.obj.call_method(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 390, in call_method
+    return generic_call_method_helper(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 370, in generic_call_method_helper
+    return wrap_fx_proxy(
+           ^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 1330, in wrap_fx_proxy
+    return wrap_fx_proxy_cls(target_cls=TensorVariable, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 1415, in wrap_fx_proxy_cls
+    example_value = get_fake_value(proxy.node, tx, allow_non_graph_fake=True)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1714, in get_fake_value
+    raise TorchRuntimeError(str(e)).with_traceback(e.__traceback__) from None
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1656, in get_fake_value
+    ret_val = wrap_fake_exception(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1190, in wrap_fake_exception
+    return fn()
+           ^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1657, in <lambda>
+    lambda: run_node(tx.output, node, args, kwargs, nnmodule)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1782, in run_node
+    raise RuntimeError(make_error_message(e)).with_traceback(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1766, in run_node
+    return getattr(args[0], node.target)(*args[1:], **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/linear.py", line 116, in forward
+    return F.linear(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/utils/_stats.py", line 20, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 896, in __torch_dispatch__
+    return self.dispatch(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1241, in dispatch
+    return self._cached_dispatch_impl(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 966, in _cached_dispatch_impl
+    output = self._dispatch_impl(func, types, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1393, in _dispatch_impl
+    return decomposition_table[func](*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_prims_common/wrappers.py", line 252, in _fn
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_decomp/decompositions.py", line 72, in inner
+    r = f(*tree_map(increase_prec, args), **tree_map(increase_prec, kwargs))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_decomp/decompositions.py", line 1421, in addmm
+    out = alpha * torch.mm(mat1, mat2)
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/utils/_stats.py", line 20, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 896, in __torch_dispatch__
+    return self.dispatch(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1241, in dispatch
+    return self._cached_dispatch_impl(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 966, in _cached_dispatch_impl
+    output = self._dispatch_impl(func, types, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1458, in _dispatch_impl
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_ops.py", line 594, in __call__
+    return self_._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_prims_common/wrappers.py", line 252, in _fn
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_meta_registrations.py", line 2014, in meta_mm
+    torch._check(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/__init__.py", line 1140, in _check
+    _check_with(RuntimeError, cond, message)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/__init__.py", line 1123, in _check_with
+    raise error_type(message_evaluated)
+torch._dynamo.exc.TorchRuntimeError: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1248, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 216, in forward
+    return self._forward(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+
+2024-08-25 06:02:45.235 | ERROR    | __main__:compare_quantization_methods:1168 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 06:02:45.236 | INFO     | __main__:quantize_and_evaluate:1097 - Starting pt2e_qat quantization
+2024-08-25 06:02:45.288 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:45.303 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:45.307 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:45.307 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:45.307 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:45.339 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:02:45.354 | INFO     | __main__:_recursive_handle:252 - Already wrapped non-traceable module found: fc
+2024-08-25 06:02:45.358 | INFO     | __main__:update_qconfig_mapping:916 - Updating qconfig mapping based on model architecture
+2024-08-25 06:02:45.359 | INFO     | __main__:update_qconfig_mapping:922 - QConfig mapping updated
+2024-08-25 06:02:45.359 | INFO     | __main__:auto_fuse_modules:925 - Automatically fusing modules
+2024-08-25 06:02:45.359 | INFO     | __main__:quantize:1045 - Starting PT2E quantization-aware training
+2024-08-25 06:02:45.372 | ERROR    | __main__:quantize_and_evaluate:1134 - Error during quantization and evaluation: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1248, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 216, in forward
+    return self._forward(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+2024-08-25 06:02:45.374 | ERROR    | __main__:quantize_and_evaluate:1135 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1110, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1046, in quantize
+    exported_model = capture_pre_autograd_graph(model, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_export/__init__.py", line 151, in capture_pre_autograd_graph
+    m = torch._dynamo.export(
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 1311, in inner
+    result_traced = opt_f(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py", line 451, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 921, in catch_errors
+    return callback(frame, cache_entry, hooks, frame_state, skip=1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 400, in _convert_frame_assert
+    return _compile(
+           ^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 676, in _compile
+    guarded_code = compile_inner(code, one_graph, hooks, transform)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 262, in time_wrapper
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 535, in compile_inner
+    out_code = transform_code_object(code, transform)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/bytecode_transformation.py", line 1036, in transform_code_object
+    transformations(instructions, code_options)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 165, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 500, in transform
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2149, in run
+    super().run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1802, in CALL
+    self.call_function(fn, args, kwargs)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 336, in call_function
+    return tx.inline_user_function_return(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 680, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2285, in inline_call
+    return cls.inline_call_(parent, func, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2399, in inline_call_
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1260, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 335, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 289, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 90, in call_function
+    return tx.inline_user_function_return(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 680, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2285, in inline_call
+    return cls.inline_call_(parent, func, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 2399, in inline_call_
+    tracer.run()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 810, in run
+    and self.step()
+        ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 773, in step
+    getattr(self, inst.opname)(inst)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 489, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 1260, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 674, in call_function
+    self.push(fn.call_function(self, args, kwargs))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py", line 332, in call_function
+    return self.obj.call_method(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 390, in call_method
+    return generic_call_method_helper(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/nn_module.py", line 370, in generic_call_method_helper
+    return wrap_fx_proxy(
+           ^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 1330, in wrap_fx_proxy
+    return wrap_fx_proxy_cls(target_cls=TensorVariable, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py", line 1415, in wrap_fx_proxy_cls
+    example_value = get_fake_value(proxy.node, tx, allow_non_graph_fake=True)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1714, in get_fake_value
+    raise TorchRuntimeError(str(e)).with_traceback(e.__traceback__) from None
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1656, in get_fake_value
+    ret_val = wrap_fake_exception(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1190, in wrap_fake_exception
+    return fn()
+           ^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1657, in <lambda>
+    lambda: run_node(tx.output, node, args, kwargs, nnmodule)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1782, in run_node
+    raise RuntimeError(make_error_message(e)).with_traceback(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 1766, in run_node
+    return getattr(args[0], node.target)(*args[1:], **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/linear.py", line 116, in forward
+    return F.linear(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/utils/_stats.py", line 20, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 896, in __torch_dispatch__
+    return self.dispatch(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1241, in dispatch
+    return self._cached_dispatch_impl(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 966, in _cached_dispatch_impl
+    output = self._dispatch_impl(func, types, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1393, in _dispatch_impl
+    return decomposition_table[func](*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_prims_common/wrappers.py", line 252, in _fn
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_decomp/decompositions.py", line 72, in inner
+    r = f(*tree_map(increase_prec, args), **tree_map(increase_prec, kwargs))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_decomp/decompositions.py", line 1421, in addmm
+    out = alpha * torch.mm(mat1, mat2)
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/utils/_stats.py", line 20, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 896, in __torch_dispatch__
+    return self.dispatch(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1241, in dispatch
+    return self._cached_dispatch_impl(func, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 966, in _cached_dispatch_impl
+    output = self._dispatch_impl(func, types, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_subclasses/fake_tensor.py", line 1458, in _dispatch_impl
+    r = func(*args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_ops.py", line 594, in __call__
+    return self_._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_prims_common/wrappers.py", line 252, in _fn
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/_meta_registrations.py", line 2014, in meta_mm
+    torch._check(
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/__init__.py", line 1140, in _check
+    _check_with(RuntimeError, cond, message)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/__init__.py", line 1123, in _check_with
+    raise error_type(message_evaluated)
+torch._dynamo.exc.TorchRuntimeError: Failed running call_method forward(*(Linear(in_features=100352, out_features=2, bias=True), FakeTensor(..., size=(32, 3136), grad_fn=<ViewBackward0>)), **{}):
+a and b must have same reduction dim, but got [32, 3136] X [100352, 2].
+
+from user code:
+   File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1248, in forward
+    x = self.fc(x)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 216, in forward
+    return self._forward(*args, **kwargs)
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+
+2024-08-25 06:02:45.375 | ERROR    | __main__:compare_quantization_methods:1168 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1533 - Quantization method comparison results:
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1535 - static: {'error': 'Quantization process failed'}
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1535 - dynamic: {'error': 'Quantization process failed'}
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1535 - qat: {'error': 'Quantization process failed'}
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1535 - pt2e_static: {'error': 'Quantization process failed'}
+2024-08-25 06:02:45.375 | INFO     | __main__:main:1535 - pt2e_qat: {'error': 'Quantization process failed'}
+2024-08-25 06:02:50.085 | WARNING  | __main__:auto_select_best_method:1175 - No valid quantization methods found
+2024-08-25 06:02:50.085 | WARNING  | __main__:main:1542 - No valid quantization methods found. Exiting.
+2024-08-25 06:08:40.460 | INFO     | __main__:quantize_and_evaluate:1111 - Starting static quantization
+2024-08-25 06:08:40.590 | WARNING  | __main__:_recursive_handle:261 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:08:40.615 | WARNING  | __main__:_recursive_handle:261 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:08:40.621 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:08:40.621 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:08:40.621 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:08:40.654 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:08:40.670 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: fc
+2024-08-25 06:08:40.675 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:08:40.676 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:08:40.676 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:08:40.676 | INFO     | __main__:quantize:981 - Preparing model for static quantization
+2024-08-25 06:08:40.702 | ERROR    | __main__:quantize_and_evaluate:1148 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:08:40.704 | ERROR    | __main__:quantize_and_evaluate:1149 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1126, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 982, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:08:40.705 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of static: Quantization process failed
+2024-08-25 06:08:40.705 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of dynamic: QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:08:40.706 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of qat: QATStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:08:40.706 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of pt2e_static: QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:08:40.706 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of pt2e_qat: PT2EQuantizationAwareTrainingStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1549 - Quantization method comparison results:
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1551 - static: {'error': 'Quantization process failed'}
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1551 - dynamic: {'error': 'QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1551 - qat: {'error': 'QATStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1551 - pt2e_static: {'error': 'QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:08:40.706 | INFO     | __main__:main:1551 - pt2e_qat: {'error': 'PT2EQuantizationAwareTrainingStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:08:45.816 | WARNING  | __main__:auto_select_best_method:1189 - No valid quantization methods found
+2024-08-25 06:08:45.816 | WARNING  | __main__:main:1558 - No valid quantization methods found. Exiting.
+2024-08-25 06:09:42.160 | INFO     | __main__:quantize_and_evaluate:1111 - Starting static quantization
+2024-08-25 06:09:42.293 | WARNING  | __main__:_recursive_handle:261 - Module conv2 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:09:42.316 | WARNING  | __main__:_recursive_handle:261 - Module fc is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:09:42.322 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:09:42.322 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:09:42.322 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:09:42.353 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: conv2
+2024-08-25 06:09:42.371 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: fc
+2024-08-25 06:09:42.377 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:09:42.377 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:09:42.377 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:09:42.378 | INFO     | __main__:quantize:981 - Preparing model for static quantization
+2024-08-25 06:09:42.390 | ERROR    | __main__:quantize_and_evaluate:1148 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:09:42.391 | ERROR    | __main__:quantize_and_evaluate:1149 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1126, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 982, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:09:42.391 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of static: Quantization process failed
+2024-08-25 06:09:42.391 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of dynamic: QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:09:42.391 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of qat: QATStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:09:42.391 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of pt2e_static: QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:09:42.391 | ERROR    | __main__:compare_quantization_methods:1182 - Error during comparison of pt2e_qat: PT2EQuantizationAwareTrainingStrategy.__init__() takes 2 positional arguments but 3 were given
+2024-08-25 06:09:42.391 | INFO     | __main__:main:1549 - Quantization method comparison results:
+2024-08-25 06:09:42.392 | INFO     | __main__:main:1551 - static: {'error': 'Quantization process failed'}
+2024-08-25 06:09:42.392 | INFO     | __main__:main:1551 - dynamic: {'error': 'QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:09:42.392 | INFO     | __main__:main:1551 - qat: {'error': 'QATStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:09:42.392 | INFO     | __main__:main:1551 - pt2e_static: {'error': 'QuantizationStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:09:42.392 | INFO     | __main__:main:1551 - pt2e_qat: {'error': 'PT2EQuantizationAwareTrainingStrategy.__init__() takes 2 positional arguments but 3 were given'}
+2024-08-25 06:09:45.037 | WARNING  | __main__:auto_select_best_method:1189 - No valid quantization methods found
+2024-08-25 06:09:45.037 | WARNING  | __main__:main:1558 - No valid quantization methods found. Exiting.
+2024-08-25 06:12:35.121 | INFO     | __main__:quantize_and_evaluate:1105 - Starting static quantization
+2024-08-25 06:12:35.289 | WARNING  | __main__:_recursive_handle:261 - Module features.3 is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:12:35.309 | WARNING  | __main__:_recursive_handle:261 - Module classifier is not traceable. Wrapping with NonTraceableModule.
+2024-08-25 06:12:35.309 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.309 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.310 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.376 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.389 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.390 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.390 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.390 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.390 | INFO     | __main__:quantize:981 - Preparing model for static quantization
+2024-08-25 06:12:35.401 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:12:35.402 | ERROR    | __main__:quantize_and_evaluate:1143 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1120, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 982, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:12:35.402 | ERROR    | __main__:compare_quantization_methods:1176 - Error during comparison of static: Quantization process failed
+2024-08-25 06:12:35.403 | INFO     | __main__:quantize_and_evaluate:1105 - Starting dynamic quantization
+2024-08-25 06:12:35.460 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.471 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.471 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.471 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.471 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.535 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.546 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.546 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.546 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.546 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.546 | INFO     | __main__:quantize:995 - Starting dynamic quantization
+2024-08-25 06:12:35.546 | INFO     | __main__:quantize:997 - Preparing model for dynamic quantization using FX
+2024-08-25 06:12:35.551 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:12:35.551 | ERROR    | __main__:quantize_and_evaluate:1143 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1120, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 998, in quantize
+    prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 382, in prepare_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:12:35.551 | ERROR    | __main__:compare_quantization_methods:1176 - Error during comparison of dynamic: Quantization process failed
+2024-08-25 06:12:35.552 | INFO     | __main__:quantize_and_evaluate:1105 - Starting qat quantization
+2024-08-25 06:12:35.605 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.616 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.617 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.617 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.617 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.672 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.683 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.684 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.684 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.684 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.684 | INFO     | __main__:quantize:1010 - Preparing model for quantization-aware training
+2024-08-25 06:12:35.689 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+2024-08-25 06:12:35.689 | ERROR    | __main__:quantize_and_evaluate:1143 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1118, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1011, in quantize
+    prepared_model = tqfx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 489, in prepare_qat_fx
+    return _prepare_fx(
+           ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/quantize_fx.py", line 144, in _prepare_fx
+    prepared = prepare(
+               ^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/prepare.py", line 1799, in prepare
+    _update_qconfig_for_fusion(model, qconfig_mapping)
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/fx/qconfig_mapping_utils.py", line 87, in _update_qconfig_for_fusion
+    raise LookupError(
+LookupError: During fusion, we need to specify the same qconfigs for all module types in <class 'torch.ao.nn.intrinsic.modules.fused.ConvReLU2d'> offending type: <class 'torch.nn.modules.activation.ReLU'>
+
+2024-08-25 06:12:35.689 | ERROR    | __main__:compare_quantization_methods:1176 - Error during comparison of qat: Quantization process failed
+2024-08-25 06:12:35.690 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_static quantization
+2024-08-25 06:12:35.747 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.760 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.761 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.761 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.761 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.816 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:35.828 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:35.828 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:35.828 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:35.828 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:35.828 | INFO     | __main__:quantize:1027 - Starting PT2E static quantization
+2024-08-25 06:12:36.099 | INFO     | __main__:quantize:1030 - Calibrating model
+2024-08-25 06:12:36.099 | INFO     | __main__:calibrate:962 - Calibrating model
+2024-08-25 06:12:36.099 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: 
+        Calling train() or eval() is not supported for exported models.
+        Please call `torch.ao.quantization.move_exported_model_to_train(model)` (or eval) instead.
+
+        If you cannot replace the calls to `model.train()` and `model.eval()`, you may override
+        the behavior for these methods by calling `torch.ao.quantization.allow_exported_model_train_eval(model)`,
+        which does the above automatically for you. Note that this has limited effect on switching
+        behavior between train and eval modes, and should be used only for special ops such as dropout
+        and batchnorm.
+        
+2024-08-25 06:12:36.099 | ERROR    | __main__:quantize_and_evaluate:1143 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1120, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1031, in quantize
+    self.calibrate(prepared_model, example_inputs)
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 963, in calibrate
+    prepared_model.eval()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/pt2e/utils.py", line 536, in _eval
+    raise NotImplementedError(error_message)
+NotImplementedError: 
+        Calling train() or eval() is not supported for exported models.
+        Please call `torch.ao.quantization.move_exported_model_to_train(model)` (or eval) instead.
+
+        If you cannot replace the calls to `model.train()` and `model.eval()`, you may override
+        the behavior for these methods by calling `torch.ao.quantization.allow_exported_model_train_eval(model)`,
+        which does the above automatically for you. Note that this has limited effect on switching
+        behavior between train and eval modes, and should be used only for special ops such as dropout
+        and batchnorm.
+        
+
+2024-08-25 06:12:36.100 | ERROR    | __main__:compare_quantization_methods:1176 - Error during comparison of pt2e_static: Quantization process failed
+2024-08-25 06:12:36.100 | INFO     | __main__:quantize_and_evaluate:1105 - Starting pt2e_qat quantization
+2024-08-25 06:12:36.179 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:36.191 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:36.192 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:36.192 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:36.192 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:36.249 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: features.3
+2024-08-25 06:12:36.261 | INFO     | __main__:_recursive_handle:253 - Already wrapped non-traceable module found: classifier
+2024-08-25 06:12:36.261 | INFO     | __main__:update_qconfig_mapping:917 - Updating qconfig mapping based on model architecture
+2024-08-25 06:12:36.261 | INFO     | __main__:update_qconfig_mapping:923 - QConfig mapping updated
+2024-08-25 06:12:36.261 | INFO     | __main__:auto_fuse_modules:926 - Automatically fusing modules
+2024-08-25 06:12:36.261 | INFO     | __main__:quantize:1043 - Starting PT2E quantization-aware training
+2024-08-25 06:12:36.289 | ERROR    | __main__:quantize_and_evaluate:1142 - Error during quantization and evaluation: 
+        Calling train() or eval() is not supported for exported models.
+        Please call `torch.ao.quantization.move_exported_model_to_train(model)` (or eval) instead.
+
+        If you cannot replace the calls to `model.train()` and `model.eval()`, you may override
+        the behavior for these methods by calling `torch.ao.quantization.allow_exported_model_train_eval(model)`,
+        which does the above automatically for you. Note that this has limited effect on switching
+        behavior between train and eval modes, and should be used only for special ops such as dropout
+        and batchnorm.
+        
+2024-08-25 06:12:36.290 | ERROR    | __main__:quantize_and_evaluate:1143 - Traceback: Traceback (most recent call last):
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1118, in quantize_and_evaluate
+    quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 1046, in quantize
+    trained_model = self.trainer.train(prepared_model, train_loader, val_loader)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/thung/Documents/Me/Coding/DeepLearning/Apps/toolkit/ml/torch/QuantizationManager.py", line 852, in train
+    model.train()
+  File "/opt/homebrew/Caskroom/miniconda/base/envs/DL/lib/python3.11/site-packages/torch/ao/quantization/pt2e/utils.py", line 533, in _train
+    raise NotImplementedError(error_message)
+NotImplementedError: 
+        Calling train() or eval() is not supported for exported models.
+        Please call `torch.ao.quantization.move_exported_model_to_train(model)` (or eval) instead.
+
+        If you cannot replace the calls to `model.train()` and `model.eval()`, you may override
+        the behavior for these methods by calling `torch.ao.quantization.allow_exported_model_train_eval(model)`,
+        which does the above automatically for you. Note that this has limited effect on switching
+        behavior between train and eval modes, and should be used only for special ops such as dropout
+        and batchnorm.
+        
+
+2024-08-25 06:12:36.290 | ERROR    | __main__:compare_quantization_methods:1176 - Error during comparison of pt2e_qat: Quantization process failed
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1543 - Quantization method comparison results:
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1545 - static: {'error': 'Quantization process failed'}
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1545 - dynamic: {'error': 'Quantization process failed'}
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1545 - qat: {'error': 'Quantization process failed'}
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1545 - pt2e_static: {'error': 'Quantization process failed'}
+2024-08-25 06:12:36.290 | INFO     | __main__:main:1545 - pt2e_qat: {'error': 'Quantization process failed'}
+2024-08-25 06:12:39.400 | WARNING  | __main__:auto_select_best_method:1183 - No valid quantization methods found
+2024-08-25 06:12:39.400 | WARNING  | __main__:main:1552 - No valid quantization methods found. Exiting.

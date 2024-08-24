@@ -2,6 +2,7 @@ import os
 import time
 import copy
 import re
+from loguru import logger
 from typing import Dict, Any, List, Union, Optional, Tuple, Callable, Type
 from abc import abstractmethod, ABC
 from dataclasses import dataclass, asdict, field
@@ -11,6 +12,8 @@ from tqdm import tqdm
 
 import yaml
 import numpy as np
+import matplotlib.pyplot as plt
+import networkx as nx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,7 +34,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, 
 
 from torch._export import capture_pre_autograd_graph, dynamic_dim
 
-from loguru import logger
+import torch.onnx
 
 class Backend(Enum):
     X86 = 'x86'
@@ -44,14 +47,14 @@ class QuantizationMethod(Enum):
     QAT = 'qat'
     PT2E_STATIC = 'pt2e_static'
     PT2E_QAT = 'pt2e_qat'
+    CUSTOM = 'custom'
 
 class QuantizationScheme(Enum):
     SYMMETRIC = 'symmetric'
     ASYMMETRIC = 'asymmetric'
 
 @dataclass
-class Config:
-    # General configuration
+class GeneralConfig:
     backend: Backend
     device: str
     method: QuantizationMethod
@@ -63,7 +66,8 @@ class Config:
     log_file: str
     save_path: str
 
-    # Quantization-specific configuration
+@dataclass
+class QuantizationConfig:
     quantization_bit_width: int = 8
     quantization_scheme: QuantizationScheme = QuantizationScheme.SYMMETRIC
     per_channel: bool = False
@@ -77,70 +81,85 @@ class Config:
     bias_quantization: bool = False
     quantization_aware_training: bool = False
     dynamic_range_quantization: bool = False
-    
-    # Performance optimization
+
+@dataclass
+class PerformanceConfig:
     num_workers: int = 4
     pin_memory: bool = True
-    
-    # Model-specific configuration
+
+@dataclass
+class Config:
+    general: GeneralConfig
+    quantization: QuantizationConfig
+    performance: PerformanceConfig
     num_classes: int = 1000
-    
-    # Custom options
     custom_options: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, yaml_file: str) -> 'Config':
         with open(yaml_file, 'r') as f:
             data = yaml.safe_load(f)
-        data['backend'] = Backend(data['backend'])
-        data['method'] = QuantizationMethod(data['method'])
-        data['quantization_scheme'] = QuantizationScheme(data['quantization_scheme'])
-        return cls(**data)
+        general_data = {k: v for k, v in data.items() if k in GeneralConfig.__annotations__}
+        quant_data = {k: v for k, v in data.items() if k in QuantizationConfig.__annotations__}
+        perf_data = {k: v for k, v in data.items() if k in PerformanceConfig.__annotations__}
+        general_data['backend'] = Backend(general_data['backend'])
+        general_data['method'] = QuantizationMethod(general_data['method'])
+        quant_data['quantization_scheme'] = QuantizationScheme(quant_data['quantization_scheme'])
+        return cls(
+            general=GeneralConfig(**general_data),
+            quantization=QuantizationConfig(**quant_data),
+            performance=PerformanceConfig(**perf_data),
+            num_classes=data.get('num_classes', 1000),
+            custom_options=data.get('custom_options', {})
+        )
 
     def to_yaml(self, yaml_file: str) -> None:
-        config_dict = self.__dict__.copy()
-        config_dict['backend'] = self.backend.value
-        config_dict['method'] = self.method.value
-        config_dict['quantization_scheme'] = self.quantization_scheme.value
+        config_dict = asdict(self)
+        config_dict['general']['backend'] = self.general.backend.value
+        config_dict['general']['method'] = self.general.method.value
+        config_dict['quantization']['quantization_scheme'] = self.quantization.quantization_scheme.value
         with open(yaml_file, 'w') as f:
             yaml.dump(config_dict, f)
 
     def validate(self) -> None:
-        if self.quantization_bit_width not in [4, 8]:
+        if self.quantization.quantization_bit_width not in [4, 8]:
             raise ConfigValidationError("quantization_bit_width must be either 4 or 8")
-        if self.backend == Backend.QNNPACK and self.device.startswith('cuda'):
+        if self.general.backend == Backend.QNNPACK and self.general.device.startswith('cuda'):
             raise ConfigValidationError("QNNPACK backend is not compatible with CUDA devices")
-        if self.method in [QuantizationMethod.PT2E_STATIC, QuantizationMethod.PT2E_QAT] and self.backend != Backend.X86:
+        if self.general.method in [QuantizationMethod.PT2E_STATIC, QuantizationMethod.PT2E_QAT] and self.general.backend != Backend.X86:
             raise ConfigValidationError("PT2E quantization methods are only compatible with X86 backend")
-        if self.calibration_batches <= 0:
+        if self.quantization.calibration_batches <= 0:
             raise ConfigValidationError("calibration_batches must be positive")
-        if self.evaluation_batches <= 0:
+        if self.quantization.evaluation_batches <= 0:
             raise ConfigValidationError("evaluation_batches must be positive")
-        if len(self.input_shape) != 3:
+        if len(self.general.input_shape) != 3:
             raise ConfigValidationError("input_shape must have 3 dimensions")
-        if self.batch_size <= 0:
+        if self.general.batch_size <= 0:
             raise ConfigValidationError("batch_size must be positive")
-        if self.num_samples <= 0:
+        if self.general.num_samples <= 0:
             raise ConfigValidationError("num_samples must be positive")
-        if self.qat_learning_rate <= 0:
+        if self.quantization.qat_learning_rate <= 0:
             raise ConfigValidationError("qat_learning_rate must be positive")
-        if self.qat_epochs <= 0:
+        if self.quantization.qat_epochs <= 0:
             raise ConfigValidationError("qat_epochs must be positive")
-        if self.num_workers < 0:
+        if self.performance.num_workers < 0:
             raise ConfigValidationError("num_workers must be non-negative")
         if self.num_classes <= 0:
             raise ConfigValidationError("num_classes must be positive")
 
     def update(self, **kwargs: Dict[str, Any]) -> None:
         for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+            if hasattr(self.general, key):
+                setattr(self.general, key, value)
+            elif hasattr(self.quantization, key):
+                setattr(self.quantization, key, value)
+            elif hasattr(self.performance, key):
+                setattr(self.performance, key, value)
+            elif key == 'num_classes':
+                self.num_classes = value
             else:
                 self.custom_options[key] = value
         self.validate()
-
-    def __str__(self) -> str:
-        return yaml.dump(self.__dict__, default_flow_style=False)
 
 class ConfigValidationError(Exception):
     """Raised when there's an error in configuration validation."""
@@ -194,6 +213,85 @@ class NonTraceableModule(nn.Module):
     def forward(self, *args, **kwargs):
         return self.forward_func(*args, **kwargs)
 
+class NonTraceableHandler:
+    @staticmethod
+    def get_default_config() -> Dict[str, Any]:
+        return {
+            'max_recursion_depth': 10,
+            'raise_on_error': True,
+            'custom_non_traceable_modules': [],
+            'skip_modules': [],
+        }
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = self.get_default_config()
+        if config:
+            self.config.update(config)
+        self.wrapped_modules: Dict[str, NonTraceableModule] = {}
+        self.skipped_modules: List[str] = []
+
+    def handle_non_traceable(self, model: nn.Module) -> nn.Module:
+        """
+        Recursively process the model to handle non-traceable modules.
+        """
+        return self._recursive_handle(model)
+
+    def _recursive_handle(self, module: nn.Module, prefix: str = '', depth: int = 0) -> nn.Module:
+        if depth > self.config['max_recursion_depth']:
+            logger.warning(f"Maximum recursion depth reached at {prefix}. Stopping further processing.")
+            return module
+
+        for name, child_module in module.named_children():
+            full_name = f"{prefix}.{name}" if prefix else name
+            
+            if isinstance(child_module, NonTraceableModule):
+                logger.info(f"Already wrapped non-traceable module found: {full_name}")
+                continue
+
+            try:
+                if self._should_skip_module(child_module):
+                    logger.info(f"Skipping module {full_name} based on configuration.")
+                    self.skipped_modules.append(full_name)
+                elif not self._is_traceable(child_module) or self._is_custom_non_traceable(child_module):
+                    logger.warning(f"Module {full_name} is not traceable. Wrapping with NonTraceableModule.")
+                    wrapped_module = NonTraceableModule(child_module.forward)
+                    setattr(module, name, wrapped_module)
+                    self.wrapped_modules[full_name] = wrapped_module
+                else:
+                    setattr(module, name, self._recursive_handle(child_module, full_name, depth + 1))
+            except Exception as e:
+                logger.error(f"Error processing module {full_name}: {str(e)}")
+                if self.config['raise_on_error']:
+                    raise
+
+        return module
+
+    def _is_traceable(self, module: nn.Module) -> bool:
+        try:
+            dummy_input = torch.randn(1, *module.input_shape) if hasattr(module, 'input_shape') else torch.randn(1, 3, 224, 224)
+            torch.jit.trace(module, dummy_input)
+            return True
+        except Exception:
+            return False
+
+    def _is_custom_non_traceable(self, module: nn.Module) -> bool:
+        return any(isinstance(module, m) for m in self.config['custom_non_traceable_modules'])
+
+    def _should_skip_module(self, module: nn.Module) -> bool:
+        return any(isinstance(module, m) for m in self.config['skip_modules'])
+
+    def get_wrapped_modules(self) -> Dict[str, NonTraceableModule]:
+        """
+        Return a dictionary of wrapped modules.
+        """
+        return self.wrapped_modules
+
+    def get_skipped_modules(self) -> List[str]:
+        """
+        Return a list of skipped module names.
+        """
+        return self.skipped_modules
+
 class NumericSuite:
     @staticmethod
     def compare_weights(float_dict: Dict[str, torch.Tensor], quantized_dict: Dict[str, torch.Tensor]) -> Dict[str, Dict[str, torch.Tensor]]:
@@ -243,8 +341,6 @@ class NumericSuite:
 
     @staticmethod
     def visualize_quantization_effects(float_model: nn.Module, quantized_model: nn.Module):
-        import matplotlib.pyplot as plt
-        
         float_weights = dict(float_model.named_parameters())
         quantized_weights = dict(quantized_model.named_parameters())
         
@@ -375,8 +471,6 @@ class NumericSuite:
 
     @staticmethod
     def visualize_quantization_error_distribution(float_model: nn.Module, quantized_model: nn.Module, example_inputs: Any):
-        import matplotlib.pyplot as plt
-        
         float_activations = NumericSuite.get_activation_values(float_model, example_inputs)
         quant_activations = NumericSuite.get_activation_values(quantized_model, example_inputs)
         
@@ -392,8 +486,6 @@ class NumericSuite:
     
     @staticmethod
     def visualize_weight_distributions(float_model: nn.Module, quantized_model: nn.Module):
-        import matplotlib.pyplot as plt
-
         for (name, float_param), (_, quant_param) in zip(float_model.named_parameters(), quantized_model.named_parameters()):
             if 'weight' in name:
                 plt.figure(figsize=(10, 5))
@@ -408,8 +500,6 @@ class NumericSuite:
 
     @staticmethod
     def visualize_activation_distributions(float_model: nn.Module, quantized_model: nn.Module, example_input: torch.Tensor):
-        import matplotlib.pyplot as plt
-
         def hook_fn(module, input, output, activations, name):
             activations[name] = output.detach()
 
@@ -440,9 +530,6 @@ class NumericSuite:
 
     @staticmethod
     def visualize_quantization_effects_on_architecture(float_model: nn.Module, quantized_model: nn.Module):
-        import networkx as nx
-        import matplotlib.pyplot as plt
-
         def create_graph(model: nn.Module) -> nx.DiGraph:
             G = nx.DiGraph()
             for name, module in model.named_modules():
@@ -761,7 +848,66 @@ class Analyzer:
         
         return performance_results
 
+class Trainer:
+    def __init__(self, num_epochs: int, learning_rate: float, optimizer_class: Type[torch.optim.Optimizer], loss_fn: Callable = F.cross_entropy):
+        self.num_epochs = num_epochs
+        self.learning_rate = learning_rate
+        self.optimizer_class = optimizer_class
+        self.loss_fn = loss_fn
+
+    def train(self, model: nn.Module, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
+        model.train()
+        optimizer = self.optimizer_class(model.parameters(), lr=self.learning_rate)
+        
+        best_model = None
+        best_accuracy = 0.0
+        
+        for epoch in range(self.num_epochs):
+            train_loss = self.train_epoch(model, train_loader, optimizer)
+            
+            if val_loader:
+                val_accuracy = self.evaluate(model, val_loader)
+                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
+                
+                if val_accuracy > best_accuracy:
+                    best_accuracy = val_accuracy
+                    best_model = copy.deepcopy(model)
+            else:
+                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}")
+        
+        return best_model if best_model is not None else model
+
+    def train_epoch(self, model: nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer) -> float:
+        model.train()
+        running_loss = 0.0
+        for inputs, targets in train_loader:
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = self.loss_fn(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        return running_loss / len(train_loader)
+
+    def evaluate(self, model: nn.Module, val_loader: DataLoader) -> float:
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for inputs, targets in val_loader:
+                outputs = model(inputs)
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+        return correct / total
+
 class QuantizationStrategy(ABC):
+    def __init__(self, config: Config):
+        self.config = config
+        self.non_traceable_handler = NonTraceableHandler(config.custom_options)
+        self.qconfig_mapping = get_default_qconfig_mapping(config.general.backend.value)
+        self.quantizer = BackendManager(config.general.backend).get_quantizer()
+        
     @abstractmethod
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         pass
@@ -772,16 +918,7 @@ class QuantizationStrategy(ABC):
         return self.auto_fuse_modules(model)
 
     def handle_non_traceable(self, model: nn.Module) -> nn.Module:
-        for name, module in model.named_children():
-            if isinstance(module, NonTraceableModule):
-                logger.warning(f"Non-traceable module found: {name}")
-                continue
-            if not torch.jit.is_traceable(module):
-                logger.warning(f"Module {name} is not traceable. Wrapping with NonTraceableModule.")
-                setattr(model, name, NonTraceableModule(module.forward))
-            else:
-                setattr(model, name, self.handle_non_traceable(module))
-        return model
+        return self.non_traceable_handler.handle_non_traceable(model)
 
     def update_qconfig_mapping(self, model: nn.Module) -> None:
         logger.info("Updating qconfig mapping based on model architecture")
@@ -826,27 +963,7 @@ class QuantizationStrategy(ABC):
         return model
 
     def set_module_qconfig(self, module_type: Union[str, nn.Module], qconfig: Any) -> None:
-        if hasattr(self, 'qconfig_mapping'):
-            self.qconfig_mapping.set_object_type(module_type, qconfig)
-        elif hasattr(self, 'quantizer'):
-            self.quantizer.set_module_type(module_type, qconfig)
-        else:
-            raise NotImplementedError("set_module_qconfig method not implemented for this strategy")
-
-class StaticQuantizationStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, qconfig_mapping: tq.QConfigMapping):
-        self.backend = backend
-        self.qconfig_mapping = qconfig_mapping
-
-    def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
-        model = self.prepare_model(model, example_inputs)
-        model.eval()
-        logger.info("Preparing model for static quantization")
-        prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
-        logger.info("Calibrating model")
-        self.calibrate(prepared_model, example_inputs)
-        logger.info("Converting model to static quantized version")
-        return tqfx.convert_fx(prepared_model)
+        self.qconfig_mapping.set_object_type(module_type, qconfig)
 
     def calibrate(self, prepared_model: nn.Module, calibration_data: Any) -> None:
         logger.info("Calibrating model")
@@ -860,18 +977,24 @@ class StaticQuantizationStrategy(QuantizationStrategy):
             else:
                 raise ValueError("Unsupported calibration data type. Expected DataLoader or Tensor.")
 
-class DynamicQuantizationStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, qconfig_mapping: tq.QConfigMapping, custom_qconfig_spec: Optional[Dict[Type[nn.Module], Any]] = None):
-        self.backend = backend
-        self.qconfig_mapping = qconfig_mapping
-        self.custom_qconfig_spec = custom_qconfig_spec or {}
 
+class StaticQuantizationStrategy(QuantizationStrategy):
+    def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
+        model = self.prepare_model(model, example_inputs)
+        model.eval()
+        logger.info("Preparing model for static quantization")
+        prepared_model = tqfx.prepare_fx(model, self.qconfig_mapping, example_inputs)
+        logger.info("Calibrating model")
+        self.calibrate(prepared_model, example_inputs)
+        logger.info("Converting model to static quantized version")
+        return tqfx.convert_fx(prepared_model)
+
+class DynamicQuantizationStrategy(QuantizationStrategy):
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         logger.info("Starting dynamic quantization")
         
         qconfig_spec = self.get_default_qconfig_spec()
-        qconfig_spec.update(self.custom_qconfig_spec)
         
         for module_type, qconfig in qconfig_spec.items():
             self.qconfig_mapping.set_object_type(module_type, qconfig)
@@ -894,13 +1017,9 @@ class DynamicQuantizationStrategy(QuantizationStrategy):
         return qconfig_spec
 
 class QATStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, qconfig_mapping: tq.QConfigMapping, num_epochs: int, learning_rate: float, optimizer_class: Type[torch.optim.Optimizer], loss_fn: Callable = F.cross_entropy):
-        self.backend = backend
-        self.qconfig_mapping = qconfig_mapping
-        self.num_epochs = num_epochs
-        self.learning_rate = learning_rate
-        self.optimizer_class = optimizer_class
-        self.loss_fn = loss_fn
+    def __init__(self, config: Config):
+        super().__init__(config)
+        self.trainer = Trainer(config.quantization.qat_epochs, config.quantization.qat_learning_rate, torch.optim.Adam)
 
     def quantize(self, model: nn.Module, example_inputs: Any, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
@@ -908,187 +1027,73 @@ class QATStrategy(QuantizationStrategy):
         prepared_model = tqfx.prepare_qat_fx(model, self.qconfig_mapping, example_inputs)
         
         logger.info("Starting quantization-aware training")
-        trained_model = self.train(prepared_model, train_loader, val_loader)
+        trained_model = self.trainer.train(prepared_model, train_loader, val_loader)
         
         trained_model.eval()
         logger.info("Converting model to quantized version after QAT")
         return tqfx.convert_fx(trained_model)
 
-    def train(self, model: nn.Module, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
-        model.train()
-        optimizer = self.optimizer_class(model.parameters(), lr=self.learning_rate)
-        
-        best_model = None
-        best_accuracy = 0.0
-        
-        for epoch in range(self.num_epochs):
-            train_loss = self.train_epoch(model, train_loader, optimizer)
-            
-            if val_loader:
-                val_accuracy = self.evaluate(model, val_loader)
-                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
-                
-                if val_accuracy > best_accuracy:
-                    best_accuracy = val_accuracy
-                    best_model = copy.deepcopy(model)
-            else:
-                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}")
-        
-        return best_model if best_model is not None else model
-
-    def train_epoch(self, model: nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer) -> float:
-        model.train()
-        running_loss = 0.0
-        for inputs, targets in train_loader:
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = self.loss_fn(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        return running_loss / len(train_loader)
-
-    def evaluate(self, model: nn.Module, val_loader: DataLoader) -> float:
-        model.eval()
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for inputs, targets in val_loader:
-                outputs = model(inputs)
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
-        return correct / total
-
 class PT2EStaticQuantizationStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, quantizer: TorchQuantizer):
-        self.backend = backend
-        self.quantizer = quantizer
-
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         logger.info("Starting PT2E static quantization")
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = tqpt2e.prepare_pt2e(exported_model, self.quantizer)
-        self.calibrate(prepared_model, example_inputs)
-        quantized_model = tqpt2e.convert_pt2e(prepared_model)
-        tq.move_exported_model_to_eval(quantized_model)
-        return quantized_model
-
-    def calibrate(self, prepared_model: nn.Module, calibration_data: Any) -> None:
         logger.info("Calibrating model")
-        prepared_model.eval()
-        with torch.no_grad():
-            if isinstance(calibration_data, DataLoader):
-                for batch in tqdm(calibration_data, desc="Calibrating"):
-                    prepared_model(*batch)
-            elif isinstance(calibration_data, torch.Tensor):
-                prepared_model(calibration_data)
-            else:
-                raise ValueError("Unsupported calibration data type. Expected DataLoader or Tensor.")
+        self.calibrate(prepared_model, example_inputs)
+        logger.info("Converting model to quantized version")
+        return tqpt2e.convert_pt2e(prepared_model)
 
 class PT2EQuantizationAwareTrainingStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, quantizer: TorchQuantizer, num_epochs: int, learning_rate: float, optimizer_class: Type[torch.optim.Optimizer], loss_fn: Callable = F.cross_entropy):
-        self.backend = backend
-        self.quantizer = quantizer
-        self.num_epochs = num_epochs
-        self.learning_rate = learning_rate
-        self.optimizer_class = optimizer_class
-        self.loss_fn = loss_fn
+    def __init__(self, config: Config):
+        super().__init__(config)
+        self.trainer = Trainer(config.quantization.qat_epochs, config.quantization.qat_learning_rate, torch.optim.Adam)
 
     def quantize(self, model: nn.Module, example_inputs: Any, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         logger.info("Starting PT2E quantization-aware training")
         exported_model = capture_pre_autograd_graph(model, example_inputs)
         prepared_model = tqpt2e.prepare_qat_pt2e(exported_model, self.quantizer)
-        trained_model = self.train(prepared_model, train_loader, val_loader)
-        quantized_model = tqpt2e.convert_pt2e(trained_model)
-        tq.move_exported_model_to_eval(quantized_model)
-        return quantized_model
-
-    def train(self, model: nn.Module, train_loader: DataLoader, val_loader: Optional[DataLoader] = None) -> nn.Module:
-        model.train()
-        optimizer = self.optimizer_class(model.parameters(), lr=self.learning_rate)
-        
-        best_model = None
-        best_accuracy = 0.0
-        
-        for epoch in range(self.num_epochs):
-            train_loss = self.train_epoch(model, train_loader, optimizer)
-            
-            if val_loader:
-                val_accuracy = self.evaluate(model, val_loader)
-                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
-                
-                if val_accuracy > best_accuracy:
-                    best_accuracy = val_accuracy
-                    best_model = copy.deepcopy(model)
-            else:
-                logger.info(f"Epoch {epoch+1}/{self.num_epochs}, Train Loss: {train_loss:.4f}")
-        
-        return best_model if best_model is not None else model
-
-    def train_epoch(self, model: nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer) -> float:
-        model.train()
-        running_loss = 0.0
-        for inputs, targets in train_loader:
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = self.loss_fn(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        return running_loss / len(train_loader)
-
-    def evaluate(self, model: nn.Module, val_loader: DataLoader) -> float:
-        model.eval()
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for inputs, targets in val_loader:
-                outputs = model(inputs)
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
-        return correct / total
-
+        trained_model = self.trainer.train(prepared_model, train_loader, val_loader)
+        logger.info("Converting model to quantized version after QAT")
+        return tqpt2e.convert_pt2e(trained_model)
+    
 class CustomQuantizationStrategy(QuantizationStrategy):
-    def __init__(self, backend: Backend, qconfig_mapping: tq.QConfigMapping, custom_quantize_function: Callable):
-        self.backend = backend
-        self.qconfig_mapping = qconfig_mapping
-        self.custom_quantize_function = custom_quantize_function
+    def __init__(self, config: Config):
+        super().__init__(config)
+        self.custom_quantize_function = config.custom_options.get('custom_quantize_function')
 
     def quantize(self, model: nn.Module, example_inputs: Any) -> nn.Module:
         model = self.prepare_model(model, example_inputs)
         logger.info("Starting custom quantization")
+        if self.custom_quantize_function is None:
+            raise ValueError("Custom quantize function not provided")
         return self.custom_quantize_function(model, example_inputs, self.qconfig_mapping)
 
 class QuantizationWrapper:
     def __init__(self, config: Config):
         self.config = config
-        logger.add(config.log_file, level=config.log_level)
-        self.backend_manager = BackendManager(config.backend)
+        logger.add(config.general.log_file, level=config.general.log_level)
+        self.backend_manager = BackendManager(config.general.backend)
         self.analyzer = Analyzer()
-        self.storage_manager = ModelStorageManager(config.save_path)
-        self.qconfig_mapping = get_default_qconfig_mapping(config.backend.value)
-        self.quantizer = self.backend_manager.get_quantizer()
+        self.storage_manager = ModelStorageManager(config.general.save_path)
         self.strategy = self._create_quantization_strategy()
         self.progress_bar = None
 
     def _create_quantization_strategy(self) -> QuantizationStrategy:
-        if self.config.method == QuantizationMethod.STATIC:
-            return StaticQuantizationStrategy(self.config.backend, self.qconfig_mapping)
-        elif self.config.method == QuantizationMethod.DYNAMIC:
-            return DynamicQuantizationStrategy(self.config.backend, self.qconfig_mapping)
-        elif self.config.method == QuantizationMethod.QAT:
-            return QATStrategy(self.config.backend, self.qconfig_mapping, self.config.qat_epochs, self.config.qat_learning_rate, torch.optim.Adam)
-        elif self.config.method == QuantizationMethod.PT2E_STATIC:
-            return PT2EStaticQuantizationStrategy(self.config.backend, self.quantizer)
-        elif self.config.method == QuantizationMethod.PT2E_QAT:
-            return PT2EQuantizationAwareTrainingStrategy(self.config.backend, self.quantizer, self.config.qat_epochs, self.config.qat_learning_rate, torch.optim.Adam)
-        else:
-            raise ValueError(f"Unknown quantization method: {self.config.method}")
-
+        strategy_map = {
+            QuantizationMethod.STATIC: StaticQuantizationStrategy,
+            QuantizationMethod.DYNAMIC: DynamicQuantizationStrategy,
+            QuantizationMethod.QAT: QATStrategy,
+            QuantizationMethod.PT2E_STATIC: PT2EStaticQuantizationStrategy,
+            QuantizationMethod.PT2E_QAT: PT2EQuantizationAwareTrainingStrategy,
+            QuantizationMethod.CUSTOM: CustomQuantizationStrategy
+        }
+        strategy_class = strategy_map.get(self.config.general.method)
+        if strategy_class is None:
+            raise ValueError(f"Unknown quantization method: {self.config.general.method}")
+        return strategy_class(self.config)
+    
     def quantize_and_evaluate(
         self,
         model: nn.Module,
@@ -1098,7 +1103,7 @@ class QuantizationWrapper:
         train_loader: Optional[DataLoader] = None,
         val_loader: Optional[DataLoader] = None
     ) -> Tuple[nn.Module, Dict[str, Any]]:
-        logger.info(f"Starting {self.config.method.value} quantization")
+        logger.info(f"Starting {self.config.general.method.value} quantization")
         
         try:
             total_steps = 5  # Adjust this based on the actual number of steps in your quantization process
@@ -1108,7 +1113,7 @@ class QuantizationWrapper:
             model = self.strategy.prepare_model(model, example_inputs)
             
             self.update_progress("Quantizing model")
-            if self.config.method in [QuantizationMethod.QAT, QuantizationMethod.PT2E_QAT]:
+            if self.config.general.method in [QuantizationMethod.QAT, QuantizationMethod.PT2E_QAT]:
                 if train_loader is None:
                     raise ValueError("train_loader is required for QAT methods")
                 quantized_model = self.strategy.quantize(model, example_inputs, train_loader, val_loader)
@@ -1125,7 +1130,7 @@ class QuantizationWrapper:
             self.update_progress("Saving model")
             # Save the quantized model
             metadata = {
-                'quantization_method': self.config.method.value,
+                'quantization_method': self.config.general.method.value,
                 'metrics': metrics,
                 'config': asdict(self.config)
             }
@@ -1145,7 +1150,7 @@ class QuantizationWrapper:
             original_model, 
             quantized_model, 
             example_inputs, 
-            self.config.device, 
+            self.config.general.device, 
             eval_function
         )
 
@@ -1161,7 +1166,7 @@ class QuantizationWrapper:
         with tqdm(total=len(methods), desc="Comparing quantization methods", unit="method") as pbar:
             for method in methods:
                 try:
-                    self.config.method = method
+                    self.config.general.method = method
                     self.strategy = self._create_quantization_strategy()
                     quantized_model, metrics = self.quantize_and_evaluate(model, example_inputs, train_loader=train_loader, val_loader=val_loader)
                     results[method.value] = metrics
@@ -1190,8 +1195,6 @@ class QuantizationWrapper:
             self.progress_bar.update(1)
     
     def visualize_comparison_results(self, results: Dict[str, Dict[str, Any]]) -> None:
-        import matplotlib.pyplot as plt
-
         methods = list(results.keys())
         size_reductions = [results[method]['size_reduction'] for method in methods]
         latency_speedups = [results[method]['latency']['fp32_latency'] / results[method]['latency']['int8_latency'] for method in methods]
@@ -1247,21 +1250,21 @@ class DataManager:
         self.config = config
 
     def get_example_inputs(self) -> torch.Tensor:
-        return torch.randn(1, *self.config.input_shape)
+        return torch.randn(1, *self.config.general.input_shape)
 
     def get_calibration_data(self) -> DataLoader:
-        dummy_data = torch.randn(100, *self.config.input_shape)
+        dummy_data = torch.randn(100, *self.config.general.input_shape)
         dummy_labels = torch.randint(0, 2, (100,))
         dataset = TensorDataset(dummy_data, dummy_labels)
         return DataLoader(dataset, batch_size=32)
 
     def create_binary_dataset(self) -> Tuple[TensorDataset, TensorDataset]:
-        total_samples = self.config.num_samples
+        total_samples = self.config.general.num_samples
         train_samples = int(0.8 * total_samples)  # 80% for training
         test_samples = total_samples - train_samples
 
         def create_data(num_samples: int) -> Tuple[torch.Tensor, torch.Tensor]:
-            images = torch.randint(0, 2, (num_samples, *self.config.input_shape), dtype=torch.float32)
+            images = torch.randint(0, 2, (num_samples, *self.config.general.input_shape), dtype=torch.float32)
             labels = (images.view(num_samples, -1).sum(dim=1) > (images[0].numel() // 2)).float()
             return images, labels
 
@@ -1335,6 +1338,170 @@ class ModelStorageManager:
             {'version': v, **info}
             for v, info in self.versions['models'].items()
         ]
+    
+    def export_to_onnx(self, model: nn.Module, example_inputs: torch.Tensor, file_path: str):
+        """
+        Export the quantized model to ONNX format.
+        
+        Args:
+            model (nn.Module): The quantized PyTorch model to export.
+            example_inputs (torch.Tensor): Example input tensor for tracing.
+            file_path (str): Path to save the ONNX model.
+        """
+        try:
+            torch.onnx.export(model, 
+                              example_inputs, 
+                              file_path, 
+                              export_params=True, 
+                              opset_version=11, 
+                              do_constant_folding=True,
+                              input_names=['input'],
+                              output_names=['output'],
+                              dynamic_axes={'input': {0: 'batch_size'},
+                                            'output': {0: 'batch_size'}})
+            logger.info(f"Model exported to ONNX format successfully. Saved at: {file_path}")
+        except Exception as e:
+            logger.error(f"Error exporting model to ONNX: {str(e)}")
+            raise
+
+class QuantizationProfiler:
+    def __init__(self):
+        self.profiling_results = {}
+
+    def profile(self, model: nn.Module, example_inputs: Any, quantization_strategy: QuantizationStrategy) -> Dict[str, Any]:
+        start_time = time.time()
+        quantized_model = quantization_strategy.quantize(model, example_inputs)
+        end_time = time.time()
+
+        self.profiling_results = {
+            "quantization_time": end_time - start_time,
+            "original_model_size": Analyzer.print_model_size(model, "Original"),
+            "quantized_model_size": Analyzer.print_model_size(quantized_model, "Quantized"),
+            "strategy": type(quantization_strategy).__name__
+        }
+
+        return self.profiling_results
+
+    def compare_strategies(self, model: nn.Module, example_inputs: Any, strategies: List[QuantizationStrategy]) -> Dict[str, Dict[str, Any]]:
+        results = {}
+        for strategy in strategies:
+            results[type(strategy).__name__] = self.profile(model, example_inputs, strategy)
+        return results
+
+    def visualize_results(self):
+        if not self.profiling_results:
+            logger.warning("No profiling results available. Run profile() first.")
+            return
+
+        labels = list(self.profiling_results.keys())
+        values = list(self.profiling_results.values())
+
+        plt.figure(figsize=(10, 6))
+        plt.bar(labels, values)
+        plt.title("Quantization Profiling Results")
+        plt.xlabel("Metrics")
+        plt.ylabel("Values")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+class ModelComparator:
+    @staticmethod
+    def compare_models(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
+        comparison_results = {}
+        
+        comparison_results["architecture_diff"] = ModelComparator._compare_architectures(model1, model2)
+        comparison_results["output_diff"] = ModelComparator._compare_outputs(model1, model2, example_inputs)
+        comparison_results["parameter_diff"] = ModelComparator._compare_parameters(model1, model2)
+        
+        return comparison_results
+
+    @staticmethod
+    def _compare_architectures(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+        def get_architecture_string(model: nn.Module) -> str:
+            return str(model)
+        
+        arch1 = get_architecture_string(model1)
+        arch2 = get_architecture_string(model2)
+        
+        return {
+            "model1_architecture": arch1,
+            "model2_architecture": arch2,
+            "architectures_match": arch1 == arch2
+        }
+
+    @staticmethod
+    def _compare_outputs(model1: nn.Module, model2: nn.Module, example_inputs: Any) -> Dict[str, Any]:
+        model1.eval()
+        model2.eval()
+        
+        with torch.no_grad():
+            output1 = model1(example_inputs)
+            output2 = model2(example_inputs)
+        
+        if isinstance(output1, tuple):
+            output1 = output1[0]
+        if isinstance(output2, tuple):
+            output2 = output2[0]
+        
+        mae = torch.mean(torch.abs(output1 - output2)).item()
+        mse = torch.mean((output1 - output2) ** 2).item()
+        
+        return {
+            "mean_absolute_error": mae,
+            "mean_squared_error": mse
+        }
+
+    @staticmethod
+    def _compare_parameters(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
+        params1 = dict(model1.named_parameters())
+        params2 = dict(model2.named_parameters())
+        
+        diff_stats = {}
+        for name in params1.keys():
+            if name in params2:
+                param1 = params1[name]
+                param2 = params2[name]
+                diff = torch.abs(param1 - param2)
+                diff_stats[name] = {
+                    "mean_diff": torch.mean(diff).item(),
+                    "max_diff": torch.max(diff).item(),
+                    "min_diff": torch.min(diff).item()
+                }
+        
+        return diff_stats
+
+    @staticmethod
+    def visualize_comparison(comparison_results: Dict[str, Any]):
+        # Visualize architecture differences
+        if comparison_results["architecture_diff"]["architectures_match"]:
+            print("Model architectures match.")
+        else:
+            print("Model architectures differ:")
+            print(f"Model 1: {comparison_results['architecture_diff']['model1_architecture']}")
+            print(f"Model 2: {comparison_results['architecture_diff']['model2_architecture']}")
+
+        # Visualize output differences
+        plt.figure(figsize=(10, 5))
+        plt.bar(["MAE", "MSE"], [comparison_results["output_diff"]["mean_absolute_error"], 
+                                 comparison_results["output_diff"]["mean_squared_error"]])
+        plt.title("Output Differences")
+        plt.ylabel("Error")
+        plt.show()
+
+        # Visualize parameter differences
+        param_diffs = comparison_results["parameter_diff"]
+        layer_names = list(param_diffs.keys())
+        mean_diffs = [param_diffs[layer]["mean_diff"] for layer in layer_names]
+
+        plt.figure(figsize=(12, 6))
+        plt.bar(layer_names, mean_diffs)
+        plt.title("Mean Parameter Differences by Layer")
+        plt.xlabel("Layer")
+        plt.ylabel("Mean Difference")
+        plt.xticks(rotation=90)
+        plt.tight_layout()
+        plt.show()
 
 def main():
     # Load configuration
@@ -1346,12 +1513,12 @@ def main():
     data_manager = DataManager(config)
 
     # Create model
-    model = ModelFactory.create_model(config.model_type, input_shape=config.input_shape, num_classes=config.num_classes)
+    model = ModelFactory.create_model(config.general.model_type, input_shape=config.general.input_shape, num_classes=config.num_classes)
 
     # Create datasets
     train_dataset, test_dataset = data_manager.create_binary_dataset()
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, pin_memory=config.pin_memory)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, num_workers=config.num_workers, pin_memory=config.pin_memory)
+    train_loader = DataLoader(train_dataset, batch_size=config.general.batch_size, shuffle=True, num_workers=config.performance.num_workers, pin_memory=config.performance.pin_memory)
+    test_loader = DataLoader(test_dataset, batch_size=config.general.batch_size, num_workers=config.performance.num_workers, pin_memory=config.performance.pin_memory)
 
     # Get example inputs
     example_inputs = data_manager.get_example_inputs()
@@ -1384,7 +1551,7 @@ def main():
         logger.info(f"{key}: {value}")
 
     # Initialize ModelStorageManager
-    storage_manager = ModelStorageManager(config.save_path)
+    storage_manager = ModelStorageManager(config.general.save_path)
 
     # Save the quantized model with metadata
     metadata = {
@@ -1410,10 +1577,20 @@ def main():
     NumericSuite.visualize_quantization_effects_on_architecture(model, quantized_model)
 
     # Profile quantization
-    profiling_results = Analyzer.profile_quantization(model, example_inputs, qw.strategy)
+    profiler = QuantizationProfiler()
+    profiling_results = profiler.profile(model, example_inputs, qw.strategy)
     logger.info("Quantization profiling results:")
     for key, value in profiling_results.items():
         logger.info(f"{key}: {value}")
+
+    # Compare quantization strategies
+    strategy_comparison = profiler.compare_strategies(model, example_inputs, [StaticQuantizationStrategy(config), DynamicQuantizationStrategy(config), QATStrategy(config)])
+    logger.info("Quantization strategy comparison results:")
+    for strategy, results in strategy_comparison.items():
+        logger.info(f"{strategy}: {results}")
+
+    # Visualize profiling results
+    profiler.visualize_results()
 
     # Evaluate model robustness
     robustness_results = Analyzer.evaluate_model_robustness(
@@ -1443,49 +1620,21 @@ def main():
     for entry in model_history:
         logger.info(f"Version {entry['version']}: {entry['metadata']}")
 
+    # Export the quantized model to ONNX format
+    onnx_file_path = os.path.join(config.general.save_path, 'quantized_model.onnx')
+    storage_manager.export_to_onnx(quantized_model, example_inputs, onnx_file_path)
+
+    # Compare original and quantized models
+    model_comparator = ModelComparator()
+    comparison_results = model_comparator.compare_models(model, quantized_model, example_inputs)
+    logger.info("Model comparison results:")
+    for key, value in comparison_results.items():
+        logger.info(f"{key}: {value}")
+
+    # Visualize model comparison results
+    model_comparator.visualize_comparison(comparison_results)
+
     logger.info("Quantization process completed successfully.")
 
 if __name__ == "__main__":
     main()
-
-
-"""
-# General configuration
-backend: x86
-device: cuda
-method: static
-model_type: SimpleCNN
-input_shape: [3, 224, 224]
-batch_size: 32
-num_samples: 10000
-log_level: INFO
-log_file: quantization.log
-save_path: ./saved_models
-
-# Quantization-specific configuration
-quantization_bit_width: 8
-quantization_scheme: symmetric
-per_channel: true
-calibration_batches: 100
-evaluation_batches: 100
-qat_epochs: 10
-qat_learning_rate: 0.001
-observer_type: minmax
-activation_quantization: true
-weight_quantization: true
-bias_quantization: false
-quantization_aware_training: false
-dynamic_range_quantization: false
-
-# Performance optimization
-num_workers: 4
-pin_memory: true
-
-# Model-specific configuration
-num_classes: 1000
-
-# Custom options
-custom_options:
-  use_custom_calibration: false
-  custom_calibration_method: kl_divergence
-"""
