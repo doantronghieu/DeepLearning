@@ -3,8 +3,8 @@
 **/cache
 **/work_dir
 **/.env
-**/.log
-**/.pt
+**/*.log
+**/*.pt
 **/.vscode
 
 Apps/data
