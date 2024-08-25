@@ -1,0 +1,14 @@
+def set_quantizer(self, backend: Literal['xnnpack', 'fbgemm'] = 'xnnpack') -> None:
+        """
+        Set the quantizer based on the specified backend.
+        """
+        if backend == 'xnnpack':
+            self.quantizer = XNNPACKQuantizer()
+            self.quantizer.set_global(get_symmetric_quantization_config())
+        elif backend == 'fbgemm':
+            # Implement FBGEMM quantizer setup here
+            raise NotImplementedError("FBGEMM quantizer not yet implemented")
+        else:
+            raise ValueError(f"Unsupported backend: {backend}. Must be either 'xnnpack' or 'fbgemm'.")
+        
+        logger.info(f"Quantizer set to {backend}")

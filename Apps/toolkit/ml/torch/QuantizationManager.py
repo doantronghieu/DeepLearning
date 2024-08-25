@@ -93,9 +93,7 @@ class QuantizationWrapper:
     def quantize_dynamic(self, model: nn.Module, qconfig_spec: Optional[Dict[Type[nn.Module], Any]] = None) -> nn.Module:
         if qconfig_spec is None:
             qconfig_spec = {nn.Linear, nn.LSTM}
-        return torch.quantization.quantize_dynamic(
-            model, qconfig_spec, dtype=torch.qint8
-        )
+        return quantize_dynamic(model, qconfig_spec, dtype=torch.qint8)
 
 class QuantizationCalibrator:
     def __init__(self, model: nn.Module, data_loader: DataLoader):
@@ -130,8 +128,7 @@ class QuantizationDebugger:
         
     def print_model_size(self) -> None:
         def get_size(model: nn.Module) -> float:
-            scripted_model = torch.jit.script(model)
-            torch.jit.save(scripted_model, "temp.p")
+            torch.save(model.state_dict(), "temp.p")
             size = os.path.getsize("temp.p") / (1024 * 1024)
             os.remove("temp.p")
             return size
@@ -204,8 +201,7 @@ class QuantizationManager:
         return quantized_model
     
     def save_quantized_model(self, model: nn.Module, path: str) -> None:
-        scripted_model = torch.jit.script(model)
-        torch.jit.save(scripted_model, path)
+        torch.jit.save(torch.jit.script(model), path)
         logger.info(f"Quantized model saved to {path}")
       
     def load_quantized_model(self, path: str) -> nn.Module:
@@ -303,6 +299,7 @@ class YourModel(AbstractModel):
             
 class YourDataset(AbstractDataset):
     def __init__(self, size: int = 1000, img_size: int = 224):
+        super().__init__()
         self.size = size
         self.img_size = img_size
         self.data = []
@@ -327,12 +324,15 @@ class YourDataset(AbstractDataset):
             (165, 42, 42)   # Brown
         ]
         
-        for _ in range(size):
+        self._generate_data()
+    
+    def _generate_data(self):
+        for _ in range(self.size):
             label = np.random.randint(0, 10)  # Random label 0 to 9
             color = self.colors[label]
             
             # Create a solid color image
-            img = Image.new('RGB', (img_size, img_size), color)
+            img = Image.new('RGB', (self.img_size, self.img_size), color)
             
             # Add some noise to make it more realistic
             img_array = np.array(img)
@@ -352,7 +352,13 @@ class YourDataset(AbstractDataset):
         if self.transform:
             img = self.transform(img)
         return img, label
-        
+
+def create_model(model_type: str, num_classes: int, pretrained: bool) -> AbstractModel:
+    if model_type.lower() == 'resnet18':
+        return YourModel(num_classes, pretrained)
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
 def main():
     # Create datasets and data loaders
     train_dataset = YourDataset(size=config.get('train_dataset_size', 1000), img_size=config.get('img_size', 224))
@@ -361,7 +367,10 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=config.get('batch_size', 32), shuffle=False)
 
     # Create your model
-    model = YourModel(num_classes=config.get('num_classes', 2), pretrained=config.get('weights', 'IMAGENET1K_V1') is not None)
+    model_type = config.get('model_type', 'resnet18')
+    num_classes = config.get('num_classes', 10)
+    pretrained = config.get('weights', 'IMAGENET1K_V1') is not None
+    model = create_model(model_type, num_classes, pretrained)
 
     # Prepare example inputs
     example_inputs = torch.randn(1, 3, config.get('img_size', 224), config.get('img_size', 224))
@@ -422,5 +431,20 @@ def main():
     logger.info(f"Dynamic quantized model accuracy: {dynamic_quant_accuracy*100:.2f}%")
     logger.info(f"QAT model accuracy: {qat_accuracy*100:.2f}%")
 
+    # Calculate and log accuracy differences
+    logger.info("\nAccuracy Differences:")
+    logger.info(f"Static quantization accuracy change: {(static_quant_accuracy - float_accuracy)*100:.2f}%")
+    logger.info(f"Dynamic quantization accuracy change: {(dynamic_quant_accuracy - float_accuracy)*100:.2f}%")
+    logger.info(f"QAT accuracy change: {(qat_accuracy - float_accuracy)*100:.2f}%")
+
+    # Optionally, you could add a threshold check here
+    accuracy_threshold = config.get('accuracy_threshold', 0.02)  # 2% threshold
+    if any(abs(acc - float_accuracy) > accuracy_threshold for acc in [static_quant_accuracy, dynamic_quant_accuracy, qat_accuracy]):
+        logger.warning("One or more quantized models have accuracy significantly different from the float model.")
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise
