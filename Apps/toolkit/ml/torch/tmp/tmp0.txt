@@ -1,46 +1,152 @@
-Conduct a comprehensive review of my codebase and associated documentation to ensure full alignment with the original specifications. Your review should include:
+Your main task: Comprehensive Wrapper Design and Implementation for Programming Frameworks, Libraries, or APIs
 
-1. Documentation Review:
-   - Meticulously re-examine all documents, ensuring no details are overlooked.
-   - Identify any ambiguities or inconsistencies within the documentation.
+## Objective
+Analyze provided documentation and develop a comprehensive wrapper design with full implementation for programming frameworks, libraries, or APIs. If an existing design is provided, enhance and refactor it while retaining all functionalities, aligning with the requirements outlined below.
 
-2. Functionality Verification:
-   - Confirm that all functionalities described in the documentation are fully implemented in the codebase.
-   - Identify any documented features that are missing or incomplete in the code.
+## Input
+- Documentation for programming frameworks (e.g., FastAPI, Django, PyTorch)
+- Library documentation (e.g., database libraries, machine learning libraries)
+- API references and usage guides
+- Current code design (if provided)
 
-3. Dependency Analysis:
-   - Verify that all imported dependencies (classes, functions, libraries, etc.) mentioned in the documents are effectively and fully utilized in the code.
-   - Identify any unused or unnecessary dependencies.
+## Tasks
 
-4. Code-Documentation Alignment:
-   - Identify any discrepancies between the documentation and the codebase.
-   - Note any code functionalities that are not documented.
-   - If deemed necessary, suggest additional utility methods, attributes, or classes to enhance the usability and completeness of the codebase. These suggestions should:
-     * Align with the documentation's explicit requirements
-     * Follow the documentation's spirit and implied intentions
-     * Enhance the overall coherence between code and documentation
+### 1. Framework/Library Analysis
+Conduct a thorough analysis of the provided documentation, extracting and categorizing key elements:
 
-5. Code Quality and Design:
-   - Evaluate the code's adherence to industry-standard best practices in:
-     * System design principles (e.g., SOLID principles)
-     * Software development methodologies (e.g., Agile, TDD)
-     * Software architecture patterns (e.g., MVC, microservices)
-   - Assess code quality metrics such as complexity, cohesion, and coupling
-   - Evaluate and suggest improvements for code readability, maintainability, and scalability.
-   - Ensure the code is general-purpose, flexible, modular, easily extendable, and domain-agnostic, making it adaptable for various use cases and future enhancements.
+a. Core Components and Functionalities:
+   - Main classes and interfaces
+   - Design patterns used
+   - Entities (nouns representing key concepts or objects)
+     - Attributes (properties or characteristics of objects, including key data types and their purposes)
+   - Services (methods/verbs/actions representing operations or processes, including input/output formats)
+   - Relationships between elements
+   - Features and capabilities
+   - API methods and their purposes
+   - Extension points and customization options
 
-6. Performance and Efficiency:
-   - Identify potential performance bottlenecks or inefficient implementations.
-   - Suggest optimizations where applicable, considering both time and space complexity.
+b. Architecture and Structure:
+   - Overall architectural design
+   - Module organization and dependencies
+   - Layering and separation of concerns
 
-Please provide a detailed report of your findings, including:
-- Overlooked details from the documentation
-- Functionalities that are not fully implemented
-- Underutilized, missing, or unnecessary dependencies
-- Discrepancies between code and documentation
-- Recommendations for enhancing code flexibility, generalizability, and adherence to best practices
-- Suggestions for performance improvements
-- Proposed additional utility methods, attributes, or classes (if necessary) to complement the existing codebase
-- A refactored version of the full source code incorporating your recommended changes
+c. Configuration:
+   - Configuration options and their effects
+   - Environment variables
+   - Initialization procedures and bootstrapping
 
-Note: When suggesting additional utility methods, attributes, or classes, please only do so if you believe they are truly necessary to enhance the usability and completeness of the codebase in alignment with both the explicit requirements and the implied spirit of the documentation.
+d. Integration Points:
+   - Hooks and callback mechanisms
+   - Event systems
+   - Interoperability features with other systems or libraries
+
+e. Execution Flow:
+   - Request/response cycles
+   - Processing pipelines
+   - Lifecycle methods and their order of execution
+
+Provide a structured summary of the analysis results, highlighting key findings and potential areas for enhancement through the wrapper design.
+
+### 2. Comprehensive Wrapper Design and Implementation
+Based on the analysis from step 1, propose and implement an efficient, production-ready wrapper design. Create multiple wrapper classes as necessary to address different aspects of the framework/library. Prioritize using existing elements from the framework/library documentation over creating new ones.
+
+For each proposed wrapper component, provide:
+
+a. Full source code implementation, including:
+   - Related imported dependencies
+   - Wrapper class name and type
+   - Attributes (with data types)
+   - Methods (with parameter types, return types, and full method bodies)
+   - Relationships with other wrapper components and original framework/library elements
+
+b. Clear comments throughout the code
+
+Implement detailed wrapper classes for the following categories:
+
+1. Domain Model wrappers
+   - Abstract base classes for core domain concepts
+   - Wrapper classes for key entities with enhanced functionality
+   - Enumeration wrappers for domain-specific types
+   - Value object wrappers for immutable domain values
+
+2. Service wrappers
+   - Application service wrappers for orchestrating use cases
+   - Domain service wrappers for complex domain logic
+   - Process wrappers for long-running or multi-step operations
+   - Integration service wrappers for external system interactions
+
+3. Data Access wrappers
+   - Repository wrappers for data persistence abstraction
+   - Data Access Object (DAO) wrappers for specific data operations
+   - Query object wrappers for complex database queries
+   - Caching wrappers for improved data retrieval performance
+
+4. Utility and Support wrappers
+   - Helper function wrappers for common operations
+   - Factory wrappers for object creation and dependency injection
+   - Strategy implementation wrappers for interchangeable algorithms
+   - Exception handling wrappers for standardized error management
+   - Logging wrappers for enhanced debugging and monitoring
+
+5. Presentation layer wrappers
+   - Controller wrappers for handling user input and coordinating responses
+   - View model wrappers for preparing data for display
+   - Data Transfer Object (DTO) wrappers for API request/response handling
+   - Validation wrappers for input sanitization and verification
+
+6. Cross-cutting concern wrappers
+   - Security wrappers for authentication and authorization
+   - Configuration management wrappers for centralized settings
+   - Transaction management wrappers for ensuring data consistency
+   - Aspect-oriented programming wrappers for cross-cutting behaviors
+
+7. Extension and Plugin Systems
+   - Plugin architecture wrappers for modular functionality
+   - Event system wrappers for decoupled communication
+   - Middleware wrappers for request/response pipeline customization
+   - Hook system wrappers for extensibility at predefined points
+
+8. Performance Optimization wrappers
+   - Caching mechanism wrappers for frequently accessed data
+   - Lazy loading wrappers for on-demand resource initialization
+   - Resource pooling wrappers for efficient object reuse
+   - Asynchronous operation wrappers for non-blocking execution
+
+9. Type Hinting and Documentation Enhancements
+   - Improved type hints for better static analysis and IDE support
+   - Docstring enhancements for clear API documentation
+   - Usage examples and code snippets for common scenarios
+   - Inline documentation for complex algorithms or business logic
+
+For each category, provide multiple wrapper classes as needed to comprehensively cover the framework/library functionality. Ensure ALL wrapper components utilize relevant elements from the original framework/library.
+
+### 3. Design Rationale
+Provide a detailed explanation of your wrapper design and implementation choices, addressing:
+
+- How the wrapper simplifies or enhances the original framework/library usage
+- Application of design patterns and principles (e.g., SOLID, DRY)
+- Justification for abstract vs. concrete implementations
+- Approach to separation of concerns
+- Strategies for dependency management and inversion of control
+- Performance considerations and optimizations
+- Approach to extensibility and future-proofing
+- How the design facilitates easier testing and debugging
+
+## Additional Requirements
+- If any aspect of the input is unclear, state assumptions and explain their influence on design and implementation
+- If an original design is provided, modify it as needed, justifying and explaining all changes while retaining all functionalities
+- Present the final source code as a cohesive unit within the Comprehensive Wrapper Design and Implementation section
+- Ensure comments in the code provide meaningful insights into design and implementation decisions
+- Explain how implemented wrapper components interact with each other and the original framework/library
+- Provide examples of how the wrapper simplifies common use-cases or complex operations
+- If wrapping multiple frameworks/libraries, explain how the wrapper facilitates their integration
+
+## Output Format
+1. Framework/Library Analysis: Provide a structured summary of the analysis results
+2. Comprehensive Wrapper Design and Implementation: Present the full source code for all wrapper classes, organized by category
+3. Design Rationale: Offer a detailed explanation of design choices and their justifications
+4. If modifying an existing design:
+   - Clearly indicate where code should be changed or deleted
+   - Provide a before-and-after comparison of significant modifications
+
+By following this structure, your response will provide a comprehensive, well-organized solution that addresses all aspects of wrapper design and implementation for the given framework, library, or API.

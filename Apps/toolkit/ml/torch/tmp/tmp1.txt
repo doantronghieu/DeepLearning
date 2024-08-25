@@ -1,154 +1,86 @@
-Objective: Conduct a thorough review of the codebase and associated documentation to ensure alignment with original specifications and adherence to software development best practices.
+Analyze provided documentation and develop a comprehensive wrapper design with full implementation for programming frameworks, libraries, or APIs. If an existing design is provided, enhance and refactor it while retaining all functionalities, aligning with the requirements outlined below.
 
-I. Documentation Review
+1. Input
+You will be provided with one or more of the following:
+- Programming frameworks (e.g., FastAPI, Django, PyTorch) documentation
+- Libraries (e.g., database libraries, machine learning libraries) documentation
+- API references and usage guides
+- Current code design (if applicable)
 
-1. Gather all relevant documentation, including:
-   - Project specifications
-   - Design documents
-   - User manuals
-   - API documentation (if applicable)
+2. Analysis and Design
+2.1 Framework/Library Analysis
+Conduct a thorough analysis of the provided documentation, extracting and categorizing key elements:
 
-2. Carefully read through all documentation, noting:
-   - Key features and functionalities
-   - Architectural decisions
-   - Performance requirements
-   - Security considerations
+- Components: Variables, Functions, Classes (Methods, Attributes, etc.), Imported Dependencies, Modules
+- Relationships between components
+- Features, Functionalities, Configurations, Architecture, Design
+- Execution Flow, Order of Execution, Processing Pipelines, Patterns
 
-3. Identify and list any:
-   - Ambiguities or inconsistencies
-   - Missing information
-   - Outdated content
-   - Overlooked details
+Provide a structured summary of the analysis results, highlighting key findings and potential areas for enhancement through the wrapper design.
 
-II. Codebase Analysis
+2.2 Design Rationale
+Based on the analysis, develop a wrapper design addressing the following categories:
 
-1. Obtain access to the full codebase, including:
-   - Source code
-   - Configuration files
-   - Build scripts
-   - Test suites
+1. Core Domain Model wrappers
+2. Service and Process wrappers
+3. Data Access and Persistence wrappers
+4. Utility and Support wrappers
+5. Presentation Layer wrappers
+6. Cross-cutting Concern wrappers
+7. Extension and Plugin System wrappers
 
-2. Perform an initial code walkthrough, focusing on:
-   - Overall structure and organization
-   - Naming conventions
-   - Comments and inline documentation
+For each category, provide:
+- Explanation of how the wrapper simplifies or enhances the original framework/library usage
+- Application of relevant design patterns and principles (e.g., SOLID, DRY)
+- Justification for abstract vs. concrete implementations
+- Approach to separation of concerns and dependency management
+- Strategies for extensibility and future-proofing
 
-3. Analyze the codebase for adherence to core principles:
-   a) Development Principles and Methodologies
-      - SOLID: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
-      - DRY: Don't Repeat Yourself
-      - KISS: Keep It Simple, Stupid
-      - YAGNI: You Aren't Gonna Need It
-      - Agile methodologies
-      - Test-Driven Development (TDD)
-      - Behavior-Driven Development (BDD)
+3. Comprehensive Wrapper Implementation
+Based on the analysis and design, implement an efficient, production-ready wrapper:
 
-   b) Architecture Patterns
-      - Identify and evaluate implementation of patterns such as:
-        • Model-View-Controller (MVC)
-        • Model-View-ViewModel (MVVM)
-        • Microservices
-        • Event-driven Architecture
-        • Layered Architecture
+3.1 For each proposed wrapper component, provide:
+- Full source code implementation, including:
+  - Related imported dependencies
+  - Wrapper class name and type
+  - Attributes (with data types)
+  - Methods (with parameter types, return types, and full method bodies)
+  - Relationships with other wrapper components and original framework/library elements
 
-   c) Code Quality Metrics
-      - Assess:
-        • Cohesion (functional and semantic)
-        • Coupling (module interdependence, use of Dependency Injection)
-        • Readability (naming, comments, structure)
-        • Maintainability (modularity, ease of change, testability)
-        • Scalability and Performance
+3.2 Ensure all wrapper components utilize relevant elements from the original framework/library.
 
-   d) General Code Characteristics
-      - Verify if the code is:
-        • General-purpose: Avoid hard-coding specific use cases
-        • Flexible: Easy to modify for different scenarios
-        • Modular: Well-defined interfaces between components
-        • Easily extendable: Open for extension but closed for modification
-        • Domain-agnostic: Minimal assumptions about the specific domain of use
-        • Adaptable for various use cases and future enhancements
+4. Documentation and Type Hints
+4.1 Enhance type hints for better static analysis and IDE support
+4.2 Improve docstrings for clear API documentation, including:
+   - Class and method descriptions
+   - Parameter explanations
+   - Return value descriptions
+   - Usage examples
+4.3 Provide usage examples and code snippets for common scenarios
+4.4 Add inline documentation for complex algorithms or business logic
 
-4. Evaluate additional design considerations:
-   - Error handling and logging mechanisms
-   - Security practices
-   - Internationalization (i18n) and Localization (l10n) support
-   - Use of design patterns (e.g., Factory, Singleton, Observer)
-   - Abstraction and encapsulation
-   - Adherence to coding standards
+5. Testing and Quality Assurance
+5.1 Provide unit tests for individual wrapper components
+5.2 Include integration tests demonstrating the wrapper's interaction with the original framework/library
+5.3 Describe any edge cases or potential issues that should be considered in testing
 
-5. Review specific areas:
-   a) Security
-      - Authentication and authorization mechanisms
-      - Data encryption
-      - Input validation and sanitization
-      - Adherence to OWASP guidelines
+6. Performance Considerations
+6.1 Address potential performance impacts of the wrapper implementation
+6.2 Suggest optimization strategies for critical operations
+6.3 Discuss any trade-offs between abstraction and performance
 
-   b) Accessibility (if applicable)
-      - Compliance with WCAG 2.1 guidelines
-      - Use of semantic HTML and ARIA attributes (for web applications)
+7. Additional Requirements
+- If any aspect of the input is unclear, state assumptions clearly and explain their influence on design and implementation.
+- If modifying an existing design, clearly indicate changes and provide before-and-after comparisons of significant modifications.
+- Explain how implemented wrapper components interact with each other and the original framework/library.
+- If wrapping multiple frameworks/libraries, explain how the wrapper facilitates their integration.
 
-   c) Version Control and Collaboration
-      - Use of Git
-      - Branching strategy
-      - Code review process
-
-   d) API Design (if applicable)
-      - RESTful design principles
-      - API documentation quality
-
-III. Code-Documentation Alignment
-
-1. Cross-reference the codebase with the documentation:
-   - Confirm implementation of all documented functionalities
-   - Identify any missing or incomplete features
-   - Note any discrepancies between code and documentation
-
-2. Analyze dependencies:
-   - Verify that all documented dependencies are utilized in the code
-   - Identify any unused or unnecessary dependencies
-   - Check if imported dependencies (classes, functions, methods, attributes) are effectively and fully utilized
-
-3. Perform a gap analysis:
-   - List functionalities present in the code but not in the documentation
-   - Identify any undocumented assumptions or behaviors
-
-IV. Performance and Efficiency Analysis
-
-1. Identify potential bottlenecks or inefficiencies in the code
-2. Analyze time and space complexity of critical operations
-3. Review database queries and data access patterns (if applicable)
-4. Assess potential scalability issues
-5. Suggest optimizations where applicable
-
-V. Enhancement Suggestions
-
-1. Based on the analysis, propose improvements:
-   - Code refactoring suggestions
-   - Additional utility methods, attributes, or classes (if necessary)
-   - Ways to enhance code-documentation coherence
-
-2. Ensure all suggestions align with:
-   - Existing documentation's spirit and implied intentions
-   - Best practices in software development
-   - Project's scalability and maintainability goals
-
-VI. Deliverables Preparation
-
-1. Compile a detailed report including:
-   a) Summary of documentation review findings, including overlooked details
-   b) Code analysis results
-   c) Code-documentation alignment issues
-   d) Functionalities not fully implemented or missed
-   e) Underutilized, missing, or unnecessary dependencies
-   f) Performance and efficiency concerns
-   g) Enhancement suggestions
-   h) Recommendations for improving code flexibility, generalizability, and adherence to best practices
-
-2. Prepare a refactored version of the codebase:
-   - Incorporate all recommended changes
-   - Ensure strict adherence to the core principles outlined in section II
-   - Include proposed additional utility methods, attributes, or classes (if necessary)
-
-3. Review and finalize all deliverables for clarity and completeness
-
-Note: When suggesting additional utilities or changes, only include those truly necessary to enhance the usability and completeness of the codebase, aligning with both explicit requirements and the implied spirit of the documentation.
+8. Output Format
+8.1 Analysis and Design:
+   a. Framework/Library Analysis: Structured summary of analysis results
+   b. Design Rationale: Detailed explanation of design choices and justifications
+8.2 Comprehensive Wrapper Implementation: Full source code for all wrapper classes, organized by their roles in the overall design
+8.3 Documentation and Type Hints: Enhanced type hints, docstrings, and usage examples
+8.4 Testing and Quality Assurance: Unit tests, integration tests, and considerations for edge cases
+8.5 Performance Considerations: Discussion of performance impacts, optimizations, and trade-offs
+8.6 Additional Requirements: Addressed assumptions, modifications to existing designs, and integration explanations
