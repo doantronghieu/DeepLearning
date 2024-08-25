@@ -1,41 +1,26 @@
-# General configuration
-backend: 'x86'
-device: 'cpu'
-method: 'static'
-model_type: 'SimpleCNN'
-input_shape: [3, 224, 224]
+# Dataset configurations
+train_dataset_size: 1000
+val_dataset_size: 200
+img_size: 224
 batch_size: 32
-num_samples: 1000
-log_level: 'INFO'
-log_file: 'quantization.log'
-save_path: './model_storage'
 
-# Quantization configuration
-quantization_bit_width: 8
-quantization_scheme: 'symmetric'
-per_channel: false
-calibration_batches: 100
-evaluation_batches: 100
-qat_epochs: 10
-qat_learning_rate: 0.001
-observer_type: 'minmax'
-activation_quantization: true
-weight_quantization: true
-bias_quantization: false
-quantization_aware_training: false
-dynamic_range_quantization: false
-
-# Performance configuration
-num_workers: 4
-pin_memory: true
-
-# Additional parameters
+# Model configurations
+model_type: 'resnet18'
 num_classes: 2
+pretrained: true
 
-# Custom options
-custom_options:
-  max_recursion_depth: 10
-  raise_on_error: true
-  custom_non_traceable_modules: []
-  skip_modules: []
-  custom_quantize_function: null
+# Quantization configurations
+quantization_backend: 'qnnpack'
+static_quantization_calibration_batches: 10
+qat_num_epochs: 1
+qat_learning_rate: 0.0001
+
+# Benchmark configurations
+benchmark_num_runs: 100
+
+# Paths
+quantized_model_path: 'quantized_model.pt'
+
+# Logging
+log_file: 'quantization.log'
+log_rotation: '500 MB'

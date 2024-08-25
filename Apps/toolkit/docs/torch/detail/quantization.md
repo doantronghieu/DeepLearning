@@ -9,7 +9,7 @@ import torchvision
 from torch.ao.quantization import QConfigMapping, default_dynamic_qconfig, get_default_qconfig
 from torch.ao.quantization.quantize_fx import convert_fx, prepare_fx
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
+from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from torch.quantization import per_channel_dynamic_qconfig, quantize_dynamic_jit
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -18,8 +18,42 @@ import torchvision.transforms as transforms
 
 from torch._export import capture_pre_autograd_graph, dynamic_dim
 from torch.ao.quantization import default_eval_fn, quantize
-from torch.ao.quantization._numeric_suite import ns
 from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
+```
+
+Functions
+
+```python
+torch.ao.quantization.DeQuantStub
+torch.ao.quantization.QuantStub
+torch.ao.quantization.backend_config
+torch.ao.quantization.default_dynamic_qconfig
+torch.ao.quantization.get_default_qat_qconfig
+torch.ao.quantization.get_default_qat_qconfig_mapping
+torch.ao.quantization.get_default_qconfig
+torch.ao.quantization.get_default_qconfig_mapping
+torch.ao.quantization.move_exported_model_to_eval
+torch.ao.quantization.move_exported_model_to_train
+torch.backends.quantized.engine
+torch.dequantize
+torch.export.export
+torch.export.load
+torch.export.save
+torch.fx
+torch.jit.load
+torch.jit.RecursiveScriptModule
+torch.jit.save
+torch.jit.script
+torch.jit.trace
+torch.quantization.convert
+torch.quantization.fuse_modules
+torch.quantization.get_default_config
+torch.quantization.prepare
+torch.quantization.prepare_qat
+torch.quantization.quantize_dynamic
+torch.quantize_per_channel
+torch.quantize_per_tensor
+torch.quantize_per_tensor_dynamic
 ```
 
 ## [Introduction to Quantization on PyTorch](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/)
