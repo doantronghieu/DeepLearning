@@ -72,3 +72,5 @@ tritonclient
 # Others
 graphviz
 torchviz
+
+thop
